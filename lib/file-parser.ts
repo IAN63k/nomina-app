@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
+import React from 'react';
 
 export type ParsedData = Record<string, any>[];
 
@@ -69,7 +70,7 @@ export function generateColumns(data: ParsedData) {
     header: key,
     cell: ({ row }: any) => {
       const value = row.getValue(key);
-      return <div className="font-medium">{String(value)}</div>;
+    return React.createElement('div', { className: 'font-medium' }, String(value));
     },
   }));
 
