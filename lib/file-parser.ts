@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import React from 'react';
+import { ColumnDef } from '@tanstack/react-table';
 
 export type ParsedData = Record<string, any>[];
 
@@ -61,11 +62,11 @@ async function parseExcel(file: File): Promise<ParsedData> {
   });
 }
 
-export function generateColumns(data: ParsedData) {
+export function generateColumns(data: ParsedData): ColumnDef<Record<string, any>, unknown>[] {
   if (!data || data.length === 0) return [];
 
   const firstRow = data[0];
-  const columns = Object.keys(firstRow).map((key) => ({
+  const columns: ColumnDef<Record<string, any>, unknown>[] = Object.keys(firstRow).map((key) => ({
     accessorKey: key,
     header: key,
     cell: ({ row }: any) => {
@@ -75,4 +76,25 @@ export function generateColumns(data: ParsedData) {
   }));
 
   return columns;
+}
+
+export function exportToCSV(data: ParsedData, fileName: string) {
+  const csv = Papa.unparse(data);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = fileName.endsWith('.csv') ? fileName : `${fileName}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+export function exportToExcel(data: ParsedData, fileName: string) {
+  const worksheet = XLSX.utils.json_to_sheet(data);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Datos');
+  XLSX.writeFile(workbook, fileName.endsWith('.xlsx') ? fileName : `${fileName}.xlsx`);
 }

@@ -61,6 +61,10 @@ const data = {
       icon: FileText,
       items: [
         {
+          title: "Vacaciones",
+          url: "/vacaciones",
+        },
+        {
           title: "Procesar Nómina",
           url: "#",
         },
@@ -101,13 +105,6 @@ const data = {
       ],
     },
   ],
-  projects: [
-    {
-      name: "Cartas de Vacaciones",
-      url: "/cartas-vacaciones",
-      icon: Calendar,
-    },
-  ],
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -120,13 +117,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   };
   
   return (
-    <Sidebar collapsible="icon" {...props}>
+    <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        {/* <NavProjects projects={data.projects} /> */}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={userData} />

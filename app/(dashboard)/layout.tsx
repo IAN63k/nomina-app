@@ -27,12 +27,12 @@ export default function DashboardLayout({
   // Obtener el nombre de la página actual
   const getPageName = () => {
     if (pathname === '/') return 'Dashboard';
-    if (pathname === '/cartas-vacaciones') return 'Cartas de Vacaciones';
+    if (pathname === '/vacaciones') return 'Gestión de Vacaciones';
     return 'Página';
   };
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={false}>
       <AppSidebar />
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
@@ -57,7 +57,9 @@ export default function DashboardLayout({
             </Breadcrumb>
           </div>
         </header>
-        {children}
+        <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center align-middle px-4 md:px-6">
+          {children}
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );
