@@ -1,7 +1,8 @@
 "use client"
 
 import { ChevronRight, type LucideIcon } from "lucide-react"
-import { useRouter, usePathname } from "next/navigation"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import React from "react"
 
 import {
@@ -35,7 +36,6 @@ export function NavMain({
   }[]
 }) {
   const pathname = usePathname()
-  const router = useRouter()
   const [selectedItem, setSelectedItem] = React.useState<string>(items[0]?.title || "")
   const [isMounted, setIsMounted] = React.useState(false)
 
@@ -47,12 +47,9 @@ export function NavMain({
     setIsMounted(true)
   }, [])
 
-  const handleItemClick = (title: string, url: string) => {
+  const handleItemClick = (title: string) => {
     setSelectedItem(title)
     localStorage.setItem("sidebar-selected-item", title)
-    if (url && url !== "#") {
-      router.push(url)
-    }
   }
 
   return (
@@ -73,12 +70,11 @@ export function NavMain({
                     "transition-all duration-150",
                     isActive && "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
                   )}
-                  onClick={() => handleItemClick(item.title, item.url)}
                 >
-                  <a href={item.url} className="cursor-pointer">
+                  <Link href={item.url} className="cursor-pointer" onClick={() => handleItemClick(item.title)}>
                     {item.icon && <item.icon className="size-4" />}
                     <span>{item.title}</span>
-                  </a>
+                  </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )
@@ -120,11 +116,10 @@ export function NavMain({
                               "transition-all duration-150",
                               isSubActive && "bg-sidebar-accent/60 text-sidebar-accent-foreground"
                             )}
-                            onClick={() => handleItemClick(subItem.title, subItem.url)}
                           >
-                            <a href={subItem.url} className="cursor-pointer">
+                            <Link href={subItem.url} className="cursor-pointer" onClick={() => handleItemClick(subItem.title)}>
                               <span>{subItem.title}</span>
-                            </a>
+                            </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>
                       )

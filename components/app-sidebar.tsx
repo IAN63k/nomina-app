@@ -56,6 +56,10 @@ const data = {
           url: "/vacaciones",
         },
         {
+          title: "Horas Extras",
+          url: "/horas-extras",
+        },
+        {
           title: "Procesar Nómina",
           url: "#",
         },
