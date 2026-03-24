@@ -10,11 +10,13 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
+import { SettingsSidebar } from "@/components/settings-sidebar";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { SettingsSidebarProvider } from "@/contexts/settings-sidebar-context";
 import { usePathname } from "next/navigation";
 
 export default function DashboardLayout({
@@ -33,6 +35,7 @@ export default function DashboardLayout({
   };
 
   return (
+    <SettingsSidebarProvider>
     <SidebarProvider defaultOpen={false}>
       <AppSidebar />
       <SidebarInset>
@@ -57,11 +60,15 @@ export default function DashboardLayout({
               </BreadcrumbList>
             </Breadcrumb>
           </div>
+          <div className="ml-auto px-4">
+            <SettingsSidebar />
+          </div>
         </header>
         <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center align-middle px-4 md:px-6">
           {children}
         </main>
       </SidebarInset>
     </SidebarProvider>
+    </SettingsSidebarProvider>
   );
 }
