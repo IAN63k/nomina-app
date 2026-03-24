@@ -28,6 +28,7 @@ export default function DashboardLayout({
   const getPageName = () => {
     if (pathname === '/') return 'Dashboard';
     if (pathname === '/vacaciones') return 'Gestión de Vacaciones';
+    if (pathname === '/horas-extras') return 'Gestión de Horas Extras';
     return 'Página';
   };
 
