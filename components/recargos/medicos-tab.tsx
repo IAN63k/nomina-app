@@ -8,12 +8,13 @@ import { DoctorSummary } from "@/src/components/DoctorSummary"
 import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
 import { ScheduleTable } from "@/src/components/ScheduleTable"
+import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
-import { fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
+import { computeDisplayRows, fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
 
-export function HorasExtrasMedicosTab() {
+export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const [dbLoading, setDbLoading] = useState(true)
@@ -53,6 +54,11 @@ export function HorasExtrasMedicosTab() {
       ),
     [months]
   )
+
+  const activeMonthRows = useMemo(() => {
+    if (!activeMonth) return []
+    return computeDisplayRows([activeMonth], turnos, recargoConfig)
+  }, [activeMonth, turnos, recargoConfig])
 
   useEffect(() => {
     let isMounted = true
@@ -123,7 +129,7 @@ export function HorasExtrasMedicosTab() {
     <section className="rounded-xl p-6">
       <div className="mb-4 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
         <Stethoscope className="h-3.5 w-3.5" />
-        Pestaña Médicos
+        Recargos — Médicos
       </div>
 
       <div className="flex flex-col gap-4">
@@ -195,6 +201,14 @@ export function HorasExtrasMedicosTab() {
                 onSearch={setSearch}
                 onToggleSort={toggleSortDirection}
               />
+            </div>
+
+            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+              <div className="mb-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Detalle del mes</p>
+                <p className="text-sm text-foreground/70">Registro completo de turnos y recargos</p>
+              </div>
+              <TurnosDetailTable rows={activeMonthRows} />
             </div>
           </>
         ) : null}

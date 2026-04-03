@@ -22,7 +22,7 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
   if (!month) return null;
   if (!month.days.length || !month.doctors.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-border bg-muted/30 px-4 py-6 text-center">
+      <div className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-8 text-center">
         <p className="text-sm text-muted-foreground">No hay datos para mostrar.</p>
       </div>
     );
@@ -36,152 +36,239 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/20 px-3 py-2">
+    <div className="space-y-2.5">
+      {/* Legend */}
+      <div className="flex flex-wrap items-center gap-1.5">
         {availableTurnos.map((code) => {
-          const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS]
-          const isDefault = ["M", "T", "N", "L", "A"].includes(code)
-          const colors = shift || { 
-            bg: "bg-slate-200", 
-            text: "text-slate-900", 
+          const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS];
+          const colors = shift || {
+            bg: "bg-slate-200",
+            text: "text-slate-900",
             border: "border-slate-300",
-            label: code
-          }
+            label: code,
+          };
           return (
-            <div key={code} className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background px-2.5 py-1 text-xs">
-              <span className={`inline-flex h-5 w-5 items-center justify-center rounded-md border text-[11px] font-bold ${colors.bg} ${colors.text} ${colors.border}`}>
+            <div
+              key={code}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] text-foreground/70 shadow-sm"
+            >
+              <span
+                className={`inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${colors.bg} ${colors.text} ${colors.border}`}
+              >
                 {code}
               </span>
-              <span className="text-foreground/90">{colors.label || code}</span>
+              <span>{colors.label || code}</span>
             </div>
           );
         })}
-        <span className="ml-auto text-[11px] text-muted-foreground">Domingos en rojo · Totales semanales en oscuro</span>
+        <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground/70">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm bg-red-400/60" />
+            Domingo
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2 w-2 rounded-sm bg-foreground/80" />
+            Total semana
+          </span>
+        </div>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-background shadow-sm">
+      {/* Table */}
+      <div className="overflow-x-auto rounded-xl border border-border bg-background shadow-sm">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
-        <thead>
-          <tr className="text-foreground/90">
-            <th className="sticky left-0 top-0 z-30 w-56 border-b border-border bg-background/95 px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur supports-backdrop-filter:bg-background/75 after:absolute after:right-0 after:top-0 after:h-full after:w-px after:bg-border">
-              Medicos
-            </th>
-            {month.days.map((day) => {
-              const isSunday = day.isSunday;
-              const isWeeklyTotal = day.isWeeklyTotal;
-              const baseClass = isWeeklyTotal
-                ? "bg-foreground text-background"
-                : isSunday
-                ? "bg-red-50 text-red-700"
-                : "bg-background text-foreground/90";
-              return (
-                <th
-                  key={`${day.dayLabel}-${day.dayNumber}-${day.isWeeklyTotal}`}
-                  className={`sticky top-0 z-20 whitespace-nowrap border-b border-border px-2 py-2 text-center text-[11px] font-semibold ${baseClass} backdrop-blur supports-backdrop-filter:bg-background/75`}
-                >
-                  <div className="leading-tight">
-                    <div className="text-[10px] uppercase tracking-widest opacity-70">{day.dayLabel}</div>
-                    {!day.isWeeklyTotal && <div className="text-sm font-bold">{day.dayNumber}</div>}
-                  </div>
-                </th>
-              );
-            })}
-            <th className="sticky right-0 top-0 z-30 border-b border-border bg-background/95 px-3 py-2 text-right text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground backdrop-blur supports-backdrop-filter:bg-background/75 before:absolute before:left-0 before:top-0 before:h-full before:w-px before:bg-border">
-              Total
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {month.doctors.map((doctor, rowIdx) => (
-            <tr key={doctor.name} className={(rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20") + " group hover:bg-muted/35 transition-colors"}>
-              <td className="sticky left-0 z-10 border-b border-border bg-background px-3 py-2 text-sm font-semibold text-foreground transition-colors group-hover:bg-muted/30">
-                {doctor.name}
-              </td>
+          <thead>
+            <tr>
+              {/* Doctor name header */}
+              <th
+                className="sticky left-0 top-0 z-30 w-52 border-b border-border bg-background px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+                style={{ boxShadow: "1px 0 0 0 var(--border)" }}
+              >
+                Médico
+              </th>
+
+              {/* Day headers */}
               {month.days.map((day) => {
-                if (day.isWeeklyTotal) {
-                  const value = getWeeklyTotalValue(doctor, day.dayLabel);
+                const isWeeklyTotal = day.isWeeklyTotal;
+                const isSunday = day.isSunday;
+
+                if (isWeeklyTotal) {
                   return (
-                    <td
-                      key={`${doctor.name}-${day.dayLabel}-${day.dayNumber}`}
-                      className="border-b border-border bg-foreground/95 px-2 py-2 text-center text-xs font-semibold text-background"
+                    <th
+                      key={`${day.dayLabel}-${day.dayNumber}-total`}
+                      className="sticky top-0 z-20 border-b border-l border-border bg-foreground px-2 py-2.5 text-center align-middle"
                     >
-                      <span className="font-mono tabular-nums">{value || ""}</span>
-                    </td>
+                      <div className="text-[9px] font-semibold uppercase tracking-widest text-background/60">
+                        sem
+                      </div>
+                    </th>
                   );
                 }
 
-                const cell = doctor.shifts[day.dayNumber];
-                const cellCode = cell?.code ?? "";
-                const colors = SHIFT_COLOR_BY_CODE[cellCode] || {
-                  bg: "bg-slate-100",
-                  text: "text-slate-900",
-                  border: "border-slate-300",
-                };
-                const detail = cell?.code ? SHIFT_DETAILS[cell.code as keyof typeof SHIFT_DETAILS] : null;
-                const codeForRange = cell?.code ?? "";
-                const timeRange = timeRangeByCode?.[codeForRange] ?? SHIFT_TIME_RANGES[codeForRange] ?? "Sin horario";
                 return (
-                  <td
-                    key={`${doctor.name}-${day.dayNumber}`}
-                    className="border-b border-border px-1.5 py-1.5 text-center align-middle"
+                  <th
+                    key={`${day.dayLabel}-${day.dayNumber}`}
+                    className={`sticky top-0 z-20 border-b border-border px-1 py-2.5 text-center align-middle ${
+                      isSunday ? "bg-red-50" : "bg-background"
+                    }`}
                   >
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="inline-flex">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={!onShiftChange}
-                                className={`inline-flex h-8 min-w-8 items-center justify-center rounded-md border px-1 text-sm font-bold font-mono transition-transform hover:-translate-y-0.5 ${colors.bg} ${colors.text} ${colors.border} ${onShiftChange ? "cursor-pointer" : "cursor-default opacity-80"}`}
-                              >
-                                {cell?.code ?? ""}
-                              </button>
-                            </DropdownMenuTrigger>
-                            {onShiftChange ? (
-                              <DropdownMenuContent align="center" className="w-48">
-                                <DropdownMenuLabel>Seleccionar turno</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuRadioGroup
-                                  value={cell?.code ?? ""}
-                                  onValueChange={(value) => onShiftChange(doctor.name, day.dayNumber, value as ShiftCode)}
-                                >
-                                  <DropdownMenuRadioItem value="">
-                                    {SHIFT_OPTION_LABELS[""]}
-                                  </DropdownMenuRadioItem>
-                                  {availableTurnos.map((code) => {
-                                    const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS]
-                                    const label = shift?.label || code
-                                    return (
-                                      <DropdownMenuRadioItem key={code} value={code}>
-                                        {code} · {label}
-                                      </DropdownMenuRadioItem>
-                                    )
-                                  })}
-                                </DropdownMenuRadioGroup>
-                              </DropdownMenuContent>
-                            ) : null}
-                          </DropdownMenu>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="space-y-0.5">
-                        <p className="font-semibold">{doctor.name}</p>
-                        <p>Día {day.dayNumber} ({day.dayLabel})</p>
-                        <p>Turno: {detail?.label ?? cell?.code ?? "Sin turno"}</p>
-                        <p>Horario: {timeRange}</p>
-                        <p>Horas: {cell?.hours ?? 0}</p>
-                        {onShiftChange ? <p className="text-[11px] text-muted-foreground">Haz clic para editar</p> : null}
-                      </TooltipContent>
-                    </Tooltip>
-                  </td>
+                    <div className="flex flex-col items-center gap-px">
+                      <span
+                        className={`text-[9px] font-medium uppercase tracking-widest ${
+                          isSunday ? "text-red-400" : "text-muted-foreground/60"
+                        }`}
+                      >
+                        {day.dayLabel}
+                      </span>
+                      <span
+                        className={`text-xs font-semibold leading-none ${
+                          isSunday ? "text-red-600" : "text-foreground/80"
+                        }`}
+                      >
+                        {day.dayNumber}
+                      </span>
+                    </div>
+                  </th>
                 );
               })}
-              <td className="sticky right-0 z-10 border-b border-border bg-background px-3 py-2 text-right text-sm font-bold text-foreground">
-                <span className="font-mono tabular-nums">{doctor.monthTotal}</span>
-              </td>
+
+              {/* Monthly total header */}
+              <th
+                className="sticky right-0 top-0 z-30 border-b border-border bg-background px-4 py-2.5 text-right text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
+                style={{ boxShadow: "-1px 0 0 0 var(--border)" }}
+              >
+                Total
+              </th>
             </tr>
-          ))}
-        </tbody>
+          </thead>
+
+          <tbody>
+            {month.doctors.map((doctor, rowIdx) => (
+              <tr
+                key={doctor.name}
+                className="group transition-colors hover:bg-muted/25"
+              >
+                {/* Doctor name */}
+                <td
+                  className="sticky left-0 z-10 max-w-[13rem] truncate border-b border-border bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors group-hover:bg-muted/25"
+                  style={{ boxShadow: "1px 0 0 0 var(--border)" }}
+                  title={doctor.name}
+                >
+                  {doctor.name}
+                </td>
+
+                {/* Day cells */}
+                {month.days.map((day) => {
+                  if (day.isWeeklyTotal) {
+                    const value = getWeeklyTotalValue(doctor, day.dayLabel);
+                    return (
+                      <td
+                        key={`${doctor.name}-${day.dayLabel}-${day.dayNumber}`}
+                        className="border-b border-l border-border bg-foreground/95 px-2 py-2 text-center"
+                      >
+                        <span className="font-mono text-xs font-semibold tabular-nums text-background/90">
+                          {value || ""}
+                        </span>
+                      </td>
+                    );
+                  }
+
+                  const cell = doctor.shifts[day.dayNumber];
+                  const cellCode = cell?.code ?? "";
+                  const colors = SHIFT_COLOR_BY_CODE[cellCode] || {
+                    bg: "bg-transparent",
+                    text: "text-foreground/30",
+                    border: "border-border/40",
+                  };
+                  const detail = cell?.code ? SHIFT_DETAILS[cell.code as keyof typeof SHIFT_DETAILS] : null;
+                  const codeForRange = cell?.code ?? "";
+                  const timeRange = timeRangeByCode?.[codeForRange] ?? SHIFT_TIME_RANGES[codeForRange] ?? "Sin horario";
+
+                  return (
+                    <td
+                      key={`${doctor.name}-${day.dayNumber}`}
+                      className={`border-b border-border px-1 py-1.5 text-center align-middle ${
+                        day.isSunday ? "bg-red-50/60" : ""
+                      }`}
+                    >
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="inline-flex">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  disabled={!onShiftChange}
+                                  className={`inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded border font-mono text-xs font-bold transition-all ${colors.bg} ${colors.text} ${colors.border} ${
+                                    onShiftChange
+                                      ? "cursor-pointer hover:opacity-90 hover:shadow-sm active:scale-95"
+                                      : "cursor-default"
+                                  } ${!cellCode ? "border-dashed opacity-30" : ""}`}
+                                >
+                                  {cell?.code ?? ""}
+                                </button>
+                              </DropdownMenuTrigger>
+                              {onShiftChange ? (
+                                <DropdownMenuContent align="center" className="w-44">
+                                  <DropdownMenuLabel className="text-xs">Seleccionar turno</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuRadioGroup
+                                    value={cell?.code ?? ""}
+                                    onValueChange={(value) =>
+                                      onShiftChange(doctor.name, day.dayNumber, value as ShiftCode)
+                                    }
+                                  >
+                                    <DropdownMenuRadioItem value="">
+                                      {SHIFT_OPTION_LABELS[""]}
+                                    </DropdownMenuRadioItem>
+                                    {availableTurnos.map((code) => {
+                                      const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS];
+                                      const label = shift?.label || code;
+                                      return (
+                                        <DropdownMenuRadioItem key={code} value={code}>
+                                          <span className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${SHIFT_COLOR_BY_CODE[code as ShiftCode]?.bg ?? ""} ${SHIFT_COLOR_BY_CODE[code as ShiftCode]?.text ?? ""}`}>
+                                            {code}
+                                          </span>
+                                          {label}
+                                        </DropdownMenuRadioItem>
+                                      );
+                                    })}
+                                  </DropdownMenuRadioGroup>
+                                </DropdownMenuContent>
+                              ) : null}
+                            </DropdownMenu>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          <p className="font-semibold">{doctor.name}</p>
+                          <p className="text-muted-foreground">
+                            {day.dayLabel} {day.dayNumber} · {detail?.label ?? "Sin turno"}
+                          </p>
+                          {cell?.code && (
+                            <p className="text-muted-foreground">
+                              {timeRange} · {cell.hours}h
+                            </p>
+                          )}
+                          {onShiftChange && (
+                            <p className="mt-0.5 text-[10px] text-muted-foreground/70">Clic para editar</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    </td>
+                  );
+                })}
+
+                {/* Monthly total */}
+                <td
+                  className="sticky right-0 z-10 border-b border-border bg-background px-4 py-2 text-right transition-colors group-hover:bg-muted/25"
+                  style={{ boxShadow: "-1px 0 0 0 var(--border)" }}
+                >
+                  <span className="font-mono text-sm font-semibold tabular-nums text-foreground">
+                    {doctor.monthTotal}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </div>
     </div>

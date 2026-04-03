@@ -388,6 +388,104 @@ export const mapMonthsToTurnosRows = (
   return [...rowsByKey.values()]
 }
 
+/**
+ * Versión de display: una fila por médico+día, sin dividir turnos nocturnos
+ * por medianoche. El recargo se calcula tomando TODAS las horas del turno
+ * contra las ventanas del día de inicio, y la diferencia se aplica solo una vez.
+ *
+ * Esto evita el problema de que mapMonthsToTurnosRows genere dos filas para
+ * un turno 20:00–06:00 y que al consolidarlas la diferencia se duplique.
+ */
+export const computeDisplayRows = (
+  months: MonthSchedule[],
+  turnosByCode?: TurnosByCode,
+  recargoConfig?: RecargoConfig,
+  conceptoDefault = 0
+): TurnoMedicoRow[] => {
+  const config = normalizeRecargoConfig(recargoConfig)
+  const rows: TurnoMedicoRow[] = []
+
+  for (const month of months) {
+    for (const doctor of month.doctors) {
+      for (const day of month.days.filter((d) => !d.isWeeklyTotal)) {
+        const date = safeDateFromMonthAndDay(month.month, day.dayNumber)
+        if (!date) continue
+
+        const cell = doctor.shifts[day.dayNumber]
+        const code = (cell?.code ?? "").trim().toUpperCase()
+        const { entrada, salida } = splitTurnoTimes(code, turnosByCode)
+        const dia = diaFromDate(date)
+        const startMin = toMinutes(entrada)
+        const endMin = toMinutes(salida)
+
+        if (startMin === null || endMin === null) {
+          rows.push({
+            medico: doctor.name,
+            documento: null,
+            fecha: toDateOnly(date),
+            turno_codigo: code,
+            entrada,
+            salida,
+            concepto: conceptoDefault,
+            horas: cell?.hours ?? 0,
+            horasrecargo: 0,
+            diferencia: 0,
+            dia,
+            mes: date.getMonth() + 1,
+            dia_numero: day.dayNumber,
+          })
+          continue
+        }
+
+        const crossesMidnight = endMin < startMin
+
+        // Usamos las ventanas del día de inicio para TODO el turno (sin split de fecha)
+        const windows = getRecargoWindows(dia, config)
+        const allParts = [
+          ...splitByWindows(startMin, crossesMidnight ? 1440 : endMin, windows),
+          ...(crossesMidnight ? splitByWindows(0, endMin, windows) : []),
+        ]
+
+        let recargoMins = 0
+        let diffRemaining = crossesMidnight ? config.nightDiffHours : 0
+        let mainConcepto = conceptoDefault
+
+        for (const part of allParts) {
+          if (!part.concepto) continue
+          const mins = part.end - part.start
+          const isNightConcepto = part.concepto === 35 || part.concepto === 36
+          const applyDiff = isNightConcepto && diffRemaining > 0
+          const diffMins = applyDiff ? diffRemaining * 60 : 0
+          if (applyDiff) diffRemaining = 0
+          recargoMins += Math.max(0, mins - diffMins)
+          if (part.concepto > mainConcepto) mainConcepto = part.concepto
+        }
+
+        const diffApplied = crossesMidnight ? config.nightDiffHours - diffRemaining : 0
+        const diferencia = diffApplied > 0 ? -diffApplied : 0
+
+        rows.push({
+          medico: doctor.name,
+          documento: null,
+          fecha: toDateOnly(date),
+          turno_codigo: code,
+          entrada,
+          salida,
+          concepto: mainConcepto,
+          horas: cell?.hours ?? 0,
+          horasrecargo: minutesToHours(recargoMins),
+          diferencia,
+          dia,
+          mes: date.getMonth() + 1,
+          dia_numero: day.dayNumber,
+        })
+      }
+    }
+  }
+
+  return rows
+}
+
 export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   if (!rows.length) return 0
 
