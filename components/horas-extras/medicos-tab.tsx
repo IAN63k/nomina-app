@@ -8,6 +8,7 @@ import { DoctorSummary } from "@/src/components/DoctorSummary"
 import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
 import { ScheduleTable } from "@/src/components/ScheduleTable"
+import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
@@ -53,6 +54,11 @@ export function HorasExtrasMedicosTab() {
       ),
     [months]
   )
+
+  const activeMonthRows = useMemo(() => {
+    if (!activeMonth) return []
+    return mapMonthsToTurnosRows([activeMonth], turnos, recargoConfig)
+  }, [activeMonth, turnos, recargoConfig])
 
   useEffect(() => {
     let isMounted = true
@@ -195,6 +201,14 @@ export function HorasExtrasMedicosTab() {
                 onSearch={setSearch}
                 onToggleSort={toggleSortDirection}
               />
+            </div>
+
+            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+              <div className="mb-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Detalle del mes</p>
+                <p className="text-sm text-foreground/70">Registro completo de turnos y recargos</p>
+              </div>
+              <TurnosDetailTable rows={activeMonthRows} />
             </div>
           </>
         ) : null}
