@@ -1,29 +1,22 @@
 export interface User {
-  id: string;
-  email: string;
-  name: string;
-  role?: string;
+  id: string
+  nombre: string
+  usuario: string
+  rol: string
 }
 
 export interface LoginCredentials {
-  email: string;
-  password: string;
+  usuario: string
+  password: string
 }
 
 export interface AuthState {
-  user: User | null;
-  isAuthenticated: boolean;
-  isLoading: boolean;
+  user: User | null
+  isAuthenticated: boolean
+  isLoading: boolean
 }
 
 export interface AuthContextType extends AuthState {
-  login: (credentials: LoginCredentials) => Promise<void>;
-  logout: () => Promise<void>;
-  register: (userData: RegisterData) => Promise<void>;
-}
-
-export interface RegisterData {
-  email: string;
-  password: string;
-  name: string;
+  login: (credentials: LoginCredentials) => Promise<void>
+  logout: () => Promise<void>
 }
