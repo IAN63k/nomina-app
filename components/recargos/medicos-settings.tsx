@@ -260,7 +260,7 @@ export function MedicosSettings() {
       {/* Footer info */}
       <div className="space-y-2 text-[11px] text-muted-foreground/70">
         <p>
-          Modifica los horarios de entrada y salida de cada turno. Los cambios se aplicarán a la tabla de horas extras.
+          Modifica los horarios de entrada y salida de cada turno. Los cambios se aplicarán a la tabla de recargos.
         </p>
         <p>
           Los turnos personalizados aparecerán como opciones en el selector de celdas.

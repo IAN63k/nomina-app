@@ -12,9 +12,9 @@ import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
-import { fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
+import { computeDisplayRows, fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
 
-export function HorasExtrasMedicosTab() {
+export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const [dbLoading, setDbLoading] = useState(true)
@@ -57,7 +57,7 @@ export function HorasExtrasMedicosTab() {
 
   const activeMonthRows = useMemo(() => {
     if (!activeMonth) return []
-    return mapMonthsToTurnosRows([activeMonth], turnos, recargoConfig)
+    return computeDisplayRows([activeMonth], turnos, recargoConfig)
   }, [activeMonth, turnos, recargoConfig])
 
   useEffect(() => {
@@ -129,7 +129,7 @@ export function HorasExtrasMedicosTab() {
     <section className="rounded-xl p-6">
       <div className="mb-4 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
         <Stethoscope className="h-3.5 w-3.5" />
-        Pestaña Médicos
+        Recargos — Médicos
       </div>
 
       <div className="flex flex-col gap-4">

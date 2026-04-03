@@ -4,28 +4,28 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { FileSpreadsheet } from "lucide-react";
 
-import { HorasExtrasAuxiliaresTab } from "@/components/horas-extras/auxiliares-tab";
-import { HorasExtrasMedicosTab } from "@/components/horas-extras/medicos-tab";
-import { MedicosSettings } from "@/components/horas-extras/medicos-settings";
+import { RecargosAuxiliaresTab } from "@/components/recargos/auxiliares-tab";
+import { RecargosMedicosTab } from "@/components/recargos/medicos-tab";
+import { MedicosSettings } from "@/components/recargos/medicos-settings";
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context";
 
-type HorasExtrasTab = "medicos" | "auxiliares";
+type RecargosTab = "medicos" | "auxiliares";
 
-export default function HorasExtras() {
-    const [activeTab, setActiveTab] = useState<HorasExtrasTab>("medicos");
+export default function Recargos() {
+    const [activeTab, setActiveTab] = useState<RecargosTab>("medicos");
     const { setConfig, resetConfig } = useSettingsSidebar();
 
     useEffect(() => {
         if (activeTab === "medicos") {
             setConfig({
                 title: "Ajustes — Médicos",
-                description: "Configuración de turnos para horas extras de médicos.",
+                description: "Configuración de turnos para recargos de médicos.",
                 content: <MedicosSettings />,
             });
         } else {
             setConfig({
                 title: "Ajustes — Auxiliares",
-                description: "Configuración para horas extras de auxiliares.",
+                description: "Configuración para recargos de auxiliares.",
                 content: null,
             });
         }
@@ -39,11 +39,11 @@ export default function HorasExtras() {
                     <div>
                         <div className="mb-2 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
                             <FileSpreadsheet className="h-3.5 w-3.5" />
-                            Módulo de Horas Extras
+                            Módulo de Recargos
                         </div>
-                        <h1 className="text-2xl font-bold tracking-tight">Gestión de Horas Extras</h1>
+                        <h1 className="text-2xl font-bold tracking-tight">Gestión de Recargos</h1>
                         <p className="mt-2 text-muted-foreground">
-                            En construcción. Pronto podrás cargar tus archivos de horas extras, visualizarlos y exportarlos en diferentes formatos.
+                            En construcción. Pronto podrás cargar tus archivos de recargos, visualizarlos y exportarlos en diferentes formatos.
                         </p>
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-lg bg-muted p-1">
@@ -63,9 +63,9 @@ export default function HorasExtras() {
                 </div>
             </section>
             {activeTab === "medicos" ? (
-                <HorasExtrasMedicosTab />
+                <RecargosMedicosTab />
             ) : (
-                <HorasExtrasAuxiliaresTab />
+                <RecargosAuxiliaresTab />
             )}
         </div>
     );

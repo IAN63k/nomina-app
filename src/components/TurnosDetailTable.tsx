@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { useState, useMemo, useCallback } from "react"
+import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react"
 import { SHIFT_COLOR_BY_CODE } from "@/src/constants/shifts"
 import { ShiftCode } from "@/src/types/schedule"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
+import { useEmpleados } from "@/contexts/empleados-context"
+
 
 type Props = {
   rows: TurnoMedicoRow[]
@@ -63,6 +65,26 @@ function getValue(row: TurnoMedicoRow, key: string): string | number {
 }
 
 export function TurnosDetailTable({ rows }: Props) {
+  const { getCedulaByName } = useEmpleados()
+
+  const exportTxt = useCallback(() => {
+    const lines = rows
+      .filter(r => r.horasrecargo > 0)
+      .map(r => {
+        const cedula = r.documento
+          ? String(r.documento)
+          : getCedulaByName(r.medico)
+        return `${cedula}\t${r.concepto}\t${r.horasrecargo}`
+      })
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = "recargos.txt"
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [rows])
+
   const [search, setSearch]               = useState("")
   const [filters, setFilters]             = useState<Record<string, string>>({})
   const [page, setPage]                   = useState(1)
@@ -133,6 +155,14 @@ export function TurnosDetailTable({ rows }: Props) {
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <button
+            type="button"
+            onClick={exportTxt}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            Exportar TXT
+          </button>
           <span className="tabular-nums">{filtered.length} registros</span>
           <select
             value={pageSize}
@@ -272,9 +302,9 @@ export function TurnosDetailTable({ rows }: Props) {
                     </span>
                   </td>
                   {/* Jornada (horas) */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums text-foreground/80">
+                  {/* <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums text-foreground/80">
                     {row.horas}
-                  </td>
+                  </td> */}
                   {/* Diferencia */}
                   <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
                     {row.diferencia !== 0
