@@ -33,18 +33,8 @@ const data = {
     },
     {
       title: "Empleados",
-      url: "#",
+      url: "/empleados",
       icon: Users,
-      items: [
-        {
-          title: "Lista de Empleados",
-          url: "#",
-        },
-        {
-          title: "Agregar Empleado",
-          url: "#",
-        },
-      ],
     },
     {
       title: "Nóminas",
@@ -56,8 +46,8 @@ const data = {
           url: "/vacaciones",
         },
         {
-          title: "Horas Extras",
-          url: "/horas-extras",
+          title: "Recargos",
+          url: "/recargos",
         },
         {
           title: "Procesar Nómina",

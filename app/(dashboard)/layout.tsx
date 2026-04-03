@@ -10,11 +10,15 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
+import { SettingsSidebar } from "@/components/settings-sidebar";
 import {
   SidebarInset,
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { MedicosTurnosProvider } from "@/contexts/medicos-turnos-context";
+import { SettingsSidebarProvider } from "@/contexts/settings-sidebar-context";
+import { EmpleadosProvider } from "@/contexts/empleados-context";
 import { usePathname } from "next/navigation";
 
 export default function DashboardLayout({
@@ -28,40 +32,50 @@ export default function DashboardLayout({
   const getPageName = () => {
     if (pathname === '/') return 'Dashboard';
     if (pathname === '/vacaciones') return 'Gestión de Vacaciones';
-    if (pathname === '/horas-extras') return 'Gestión de Horas Extras';
+    if (pathname === '/recargos') return 'Gestión de Recargos';
+    if (pathname === '/empleados') return 'Lista de Empleados';
     return 'Página';
   };
 
   return (
-    <SidebarProvider defaultOpen={false}>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-            <SidebarTrigger className="-ml-1" />
-            <Separator
-              orientation="vertical"
-              className="mr-2 data-[orientation=vertical]:h-4"
-            />
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="/">
-                    Nomina App
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden md:block" />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{getPageName()}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb>
-          </div>
-        </header>
-        <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center align-middle px-4 md:px-6">
-          {children}
-        </main>
-      </SidebarInset>
-    </SidebarProvider>
+    <EmpleadosProvider>
+    <MedicosTurnosProvider>
+      <SettingsSidebarProvider>
+        <SidebarProvider defaultOpen={false}>
+          <AppSidebar />
+          <SidebarInset>
+            <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12">
+              <div className="flex items-center gap-2 px-4">
+                <SidebarTrigger className="-ml-1" />
+                <Separator
+                  orientation="vertical"
+                  className="mr-2 data-[orientation=vertical]:h-4"
+                />
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    <BreadcrumbItem className="hidden md:block">
+                      <BreadcrumbLink href="/">
+                        Nomina App
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="hidden md:block" />
+                    <BreadcrumbItem>
+                      <BreadcrumbPage>{getPageName()}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
+              </div>
+              <div className="ml-auto px-4">
+                <SettingsSidebar />
+              </div>
+            </header>
+            <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col justify-center align-middle px-4 md:px-6">
+              {children}
+            </main>
+          </SidebarInset>
+        </SidebarProvider>
+      </SettingsSidebarProvider>
+    </MedicosTurnosProvider>
+    </EmpleadosProvider>
   );
 }
