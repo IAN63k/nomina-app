@@ -1,96 +1,55 @@
-'use client';
+'use client'
 
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import type { AuthContextType, LoginCredentials, User, RegisterData } from '@/types/auth';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react'
+import type { AuthContextType, LoginCredentials, User } from '@/types/auth'
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+const SESSION_KEY = 'auth_user'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser]         = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  // Verificar si hay sesión guardada al montar el componente
+  // Restaurar sesión guardada al montar
   useEffect(() => {
-    const checkAuth = () => {
-      try {
-        const savedUser = localStorage.getItem('user');
-        if (savedUser) {
-          setUser(JSON.parse(savedUser));
-        }
-      } catch (error) {
-        console.error('Error al cargar sesión:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, []);
+    try {
+      const saved = localStorage.getItem(SESSION_KEY)
+      if (saved) setUser(JSON.parse(saved) as User)
+    } catch {
+      localStorage.removeItem(SESSION_KEY)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
   const login = useCallback(async (credentials: LoginCredentials) => {
-    setIsLoading(true);
+    setIsLoading(true)
     try {
-      // TODO: Reemplazar con llamada real a la API cuando esté disponible
-      // Simulación de login por ahora
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const res = await fetch('/api/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(credentials),
+      })
 
-      const mockUser: User = {
-        id: '1',
-        email: credentials.email,
-        name: credentials.email.split('@')[0],
-        role: 'user',
-      };
+      const data = await res.json()
 
-      setUser(mockUser);
-      localStorage.setItem('user', JSON.stringify(mockUser));
-      // TODO: Guardar token cuando el backend esté listo
-    } catch (error) {
-      console.error('Error en login:', error);
-      throw new Error('Error al iniciar sesión');
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Error al iniciar sesión.')
+      }
+
+      const loggedUser: User = data
+      setUser(loggedUser)
+      localStorage.setItem(SESSION_KEY, JSON.stringify(loggedUser))
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  }, []);
+  }, [])
 
   const logout = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      // TODO: Llamar a la API de logout cuando esté disponible
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      setUser(null);
-      localStorage.removeItem('user');
-      // TODO: Limpiar token cuando el backend esté listo
-    } catch (error) {
-      console.error('Error en logout:', error);
-      throw new Error('Error al cerrar sesión');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const register = useCallback(async (userData: RegisterData) => {
-    setIsLoading(true);
-    try {
-      // TODO: Reemplazar con llamada real a la API cuando esté disponible
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        email: userData.email,
-        name: userData.name,
-        role: 'user',
-      };
-
-      setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-    } catch (error) {
-      console.error('Error en registro:', error);
-      throw new Error('Error al registrar usuario');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    setUser(null)
+    localStorage.removeItem(SESSION_KEY)
+  }, [])
 
   const value: AuthContextType = {
     user,
@@ -98,16 +57,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isLoading,
     login,
     logout,
-    register,
-  };
+  }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
+  const context = useContext(AuthContext)
   if (context === undefined) {
-    throw new Error('useAuth debe usarse dentro de un AuthProvider');
+    throw new Error('useAuth debe usarse dentro de un AuthProvider')
   }
-  return context;
+  return context
 }
