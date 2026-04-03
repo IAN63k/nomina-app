@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { MedicosTurnosProvider } from "@/contexts/medicos-turnos-context";
 import { SettingsSidebarProvider } from "@/contexts/settings-sidebar-context";
+import { EmpleadosProvider } from "@/contexts/empleados-context";
 import { usePathname } from "next/navigation";
 
 export default function DashboardLayout({
@@ -31,11 +32,13 @@ export default function DashboardLayout({
   const getPageName = () => {
     if (pathname === '/') return 'Dashboard';
     if (pathname === '/vacaciones') return 'Gestión de Vacaciones';
-    if (pathname === '/horas-extras') return 'Gestión de Horas Extras';
+    if (pathname === '/recargos') return 'Gestión de Recargos';
+    if (pathname === '/empleados') return 'Lista de Empleados';
     return 'Página';
   };
 
   return (
+    <EmpleadosProvider>
     <MedicosTurnosProvider>
       <SettingsSidebarProvider>
         <SidebarProvider defaultOpen={false}>
@@ -73,5 +76,6 @@ export default function DashboardLayout({
         </SidebarProvider>
       </SettingsSidebarProvider>
     </MedicosTurnosProvider>
+    </EmpleadosProvider>
   );
 }
