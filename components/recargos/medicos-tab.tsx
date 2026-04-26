@@ -11,6 +11,7 @@ import { ScheduleTable } from "@/src/components/ScheduleTable"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
+import { useEmpleados } from "@/contexts/empleados-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
 import { computeDisplayRows, fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
 
@@ -59,6 +60,27 @@ export function RecargosMedicosTab() {
     if (!activeMonth) return []
     return computeDisplayRows([activeMonth], turnos, recargoConfig)
   }, [activeMonth, turnos, recargoConfig])
+
+  // Inyectar temporalmente la cédula desde el contexto de empleados (solo en memoria/UI)
+  const { getCedulaByName } = useEmpleados()
+
+  const activeMonthRowsWithCedula = useMemo(() => {
+    return activeMonthRows.map((r) => {
+      // Si ya existe documento, no tocar
+      if (r.documento) return r
+
+      try {
+        const ced = getCedulaByName(r.medico)
+        if (!ced || ced === "0000000000") return r
+        const digits = String(ced).replace(/\D/g, "")
+        if (!digits || digits === "0000000000") return r
+        const num = Number(digits)
+        return { ...r, documento: Number.isFinite(num) ? num : r.documento }
+      } catch {
+        return r
+      }
+    })
+  }, [activeMonthRows, getCedulaByName])
 
   useEffect(() => {
     let isMounted = true
@@ -208,7 +230,7 @@ export function RecargosMedicosTab() {
                 <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Detalle del mes</p>
                 <p className="text-sm text-foreground/70">Registro completo de turnos y recargos</p>
               </div>
-              <TurnosDetailTable rows={activeMonthRows} />
+              <TurnosDetailTable rows={activeMonthRowsWithCedula} />
             </div>
           </>
         ) : null}
