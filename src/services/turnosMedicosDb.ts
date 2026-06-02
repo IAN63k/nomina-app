@@ -420,54 +420,55 @@ export const mapMonthsToTurnosRows = (
           continue
         }
 
-        const crossesMidnight = endMin < startMin
-
-        // Usamos las ventanas del día de inicio para TODO el turno (sin split de fecha)
-        const windows = getRecargoWindows(dia, config)
-        const allParts = [
-          ...splitByWindows(startMin, crossesMidnight ? 1440 : endMin, windows),
-          ...(crossesMidnight ? splitByWindows(0, endMin, windows) : []),
-        ]
-
-        let recargoMins = 0
-        let diffRemaining = crossesMidnight ? config.nightDiffHours : 0
-        let mainConcepto = conceptoDefault
-
-        for (const part of allParts) {
-          if (!part.concepto) continue
-          const mins = part.end - part.start
-          const isNightConcepto = part.concepto === 35 || part.concepto === 36
-          const applyDiff = isNightConcepto && diffRemaining > 0
-          const diffMins = applyDiff ? diffRemaining * 60 : 0
-          if (applyDiff) diffRemaining = 0
-          recargoMins += Math.max(0, mins - diffMins)
-          if (part.concepto > mainConcepto) mainConcepto = part.concepto
-        }
-
-        const diffApplied = crossesMidnight ? config.nightDiffHours - diffRemaining : 0
-        const diferencia = diffApplied > 0 ? -diffApplied : 0
-
-        rows.push({
+        // Turno partido — Segmento 1: entrada → 24:00 (día de inicio, sin descuento)
+        const segA = computeDateSegment(dia, startMinutes, 1440, config, 0)
+        addRowAggregated(rowsByKey, {
           medico: doctor.name,
           documento: null,
           fecha: toDateOnly(date),
           turno_codigo: code,
           entrada,
-          salida,
-          concepto: mainConcepto,
-          horas: cell?.hours ?? 0,
-          horasrecargo: minutesToHours(recargoMins),
-          diferencia,
+          salida: minutesToTimeLabel(1440),
+          concepto: segA.concepto || conceptoDefault,
+          horas: segA.horas,
+          horasrecargo: segA.horasrecargo,
+          diferencia: segA.diferencia,
           dia,
           mes: date.getMonth() + 1,
           dia_numero: day.dayNumber,
+        })
+
+        // Turno partido — Segmento 2: 00:00 → salida (día siguiente, con descuento)
+        const nextDay = addDays(date, 1)
+        const nextDia = diaFromDate(nextDay)
+        const segB = computeDateSegment(nextDia, 0, endMinutes, config, config.nightDiffHours)
+        addRowAggregated(rowsByKey, {
+          medico: doctor.name,
+          documento: null,
+          fecha: toDateOnly(nextDay),
+          turno_codigo: code,
+          entrada: minutesToTimeLabel(0),
+          salida,
+          concepto: segB.concepto || conceptoDefault,
+          horas: segB.horas,
+          horasrecargo: segB.horasrecargo,
+          diferencia: segB.diferencia,
+          dia: nextDia,
+          mes: nextDay.getMonth() + 1,
+          dia_numero: nextDay.getDate(),
         })
       }
     }
   }
 
-  return rows
+  return [...rowsByKey.values()]
 }
+
+/**
+ * Alias retenido por compatibilidad. La tabla de detalle y el TXT usan exactamente
+ * la misma partición por medianoche que el guardado en BD.
+ */
+export const computeDisplayRows = mapMonthsToTurnosRows
 
 export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   if (!rows.length) return 0
