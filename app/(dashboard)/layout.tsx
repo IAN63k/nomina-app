@@ -17,6 +17,7 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { MedicosTurnosProvider } from "@/contexts/medicos-turnos-context";
+import { AuxiliaresTurnosProvider } from "@/contexts/auxiliares-turnos-context";
 import { SettingsSidebarProvider } from "@/contexts/settings-sidebar-context";
 import { EmpleadosProvider } from "@/contexts/empleados-context";
 import { usePathname } from "next/navigation";
@@ -40,6 +41,7 @@ export default function DashboardLayout({
   return (
     <EmpleadosProvider>
     <MedicosTurnosProvider>
+    <AuxiliaresTurnosProvider>
       <SettingsSidebarProvider>
         <SidebarProvider defaultOpen={false}>
           <AppSidebar />
@@ -75,6 +77,7 @@ export default function DashboardLayout({
           </SidebarInset>
         </SidebarProvider>
       </SettingsSidebarProvider>
+    </AuxiliaresTurnosProvider>
     </MedicosTurnosProvider>
     </EmpleadosProvider>
   );

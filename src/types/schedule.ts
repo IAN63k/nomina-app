@@ -1,8 +1,12 @@
 export type ShiftCode = "M" | "T" | "N" | "L" | "A" | "";
 
 export interface ShiftCell {
-  code: ShiftCode;
+  // Código de turno. Médicos usa el subconjunto `ShiftCode` (M/T/N/L/A); auxiliares
+  // usa códigos multi-carácter (M1, M2, T1, N1, …). Por eso es `string` genérico.
+  code: string;
   hours: number;
+  // Marcado de día festivo (solo auxiliares, vía sufijo "/DF"). Médicos no lo usa.
+  festivo?: boolean;
 }
 
 export interface DoctorSchedule {
