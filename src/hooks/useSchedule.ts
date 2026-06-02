@@ -1,21 +1,23 @@
 import { useCallback, useMemo, useState } from "react";
 import { SHIFT_DEFAULT_HOURS } from "@/src/constants/shifts";
 import { parseExcelFile } from "@/src/services/excelParser";
-import { DoctorSchedule, MonthSchedule, ShiftCode } from "@/src/types/schedule";
+import { DoctorSchedule, MonthSchedule } from "@/src/types/schedule";
 
 type SortDirection = "asc" | "desc";
 
 type DoctorSummary = {
   name: string;
   totalHours: number;
-  shiftsCount: Record<ShiftCode, number>;
+  shiftsCount: Record<string, number>;
 };
 
 type UseScheduleOptions = {
-  hoursByCode?: Partial<Record<ShiftCode, number>>;
+  hoursByCode?: Partial<Record<string, number>>;
+  /** Parser del archivo. Default: `parseExcelFile` (formato de médicos). */
+  parseFile?: (file: File) => Promise<MonthSchedule[]>;
 };
 
-const initialCounts = (): Record<ShiftCode, number> => ({ "": 0, M: 0, T: 0, N: 0, L: 0, A: 0 });
+const initialCounts = (): Record<string, number> => ({});
 
 const recalculateDoctorTotals = (doctor: DoctorSchedule, days: MonthSchedule["days"]) => {
   const weeklyTotals: number[] = [];
@@ -80,7 +82,7 @@ export function useSchedule(options?: UseScheduleOptions) {
     setError(null);
     setLoading(true);
     try {
-      const parsed = await parseExcelFile(file);
+      const parsed = await (options?.parseFile ?? parseExcelFile)(file);
       setMonths(parsed);
       setActiveMonthIndex(0);
       return true;
@@ -134,7 +136,7 @@ export function useSchedule(options?: UseScheduleOptions) {
     setSortDirection((prev) => (prev === "desc" ? "asc" : "desc"));
   };
 
-  const updateShift = (doctorName: string, dayNumber: number, code: ShiftCode) => {
+  const updateShift = (doctorName: string, dayNumber: number, code: string) => {
     setMonths((prevMonths) =>
       prevMonths.map((month, monthIdx) => {
         if (monthIdx !== activeMonthIndex) return month;
@@ -144,9 +146,9 @@ export function useSchedule(options?: UseScheduleOptions) {
           doctors: month.doctors.map((doctor) => {
             if (doctor.name !== doctorName) return doctor;
 
-            const previousCell = doctor.shifts[dayNumber] ?? { code: "" as ShiftCode, hours: 0 };
+            const previousCell = doctor.shifts[dayNumber] ?? { code: "", hours: 0 };
             const configuredHours = code === "" ? 0 : options?.hoursByCode?.[code];
-            const fallbackHours = code === "" ? 0 : SHIFT_DEFAULT_HOURS[code];
+            const fallbackHours = code === "" ? 0 : (SHIFT_DEFAULT_HOURS as Record<string, number>)[code] ?? 0;
             const nextHours =
               typeof configuredHours === "number" && Number.isFinite(configuredHours)
                 ? configuredHours
