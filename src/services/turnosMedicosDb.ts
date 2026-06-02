@@ -377,7 +377,6 @@ export const mapMonthsToTurnosRows = (
 
         const startMinutes = toMinutes(entrada)
         const endMinutes = toMinutes(salida)
-        const crossesMidnight = startMinutes !== null && endMinutes !== null ? endMinutes < startMinutes : false
 
         // Sin horario configurado: se guarda fila simple sin recargos
         if (startMinutes === null || endMinutes === null) {
@@ -399,110 +398,21 @@ export const mapMonthsToTurnosRows = (
           continue
         }
 
-        const windows = getRecargoWindows(dia, config)
-        const segments: Array<{
-          date: Date
-          start: number
-          end: number
-          concepto: number | null
-        }> = []
+        const crossesMidnight = endMinutes < startMinutes
 
         if (!crossesMidnight) {
-          const slices = splitByWindows(startMinutes, endMinutes, windows)
-          slices.forEach((slice) => {
-            segments.push({ date, ...slice })
-          })
-        } else {
-          // Cruza medianoche: dividir en día actual y siguiente
-          const todaySlices = splitByWindows(startMinutes, 1440, windows)
-          todaySlices.forEach((slice) => segments.push({ date, ...slice }))
-
-          const nextDay = addDays(date, 1)
-          const nextDia = diaFromDate(nextDay)
-          const nextWindows = getRecargoWindows(nextDia, config)
-          const nextSlices = splitByWindows(0, endMinutes, nextWindows)
-          nextSlices.forEach((slice) => segments.push({ date: nextDay, ...slice }))
-        }
-
-        let diffRemaining = crossesMidnight ? config.nightDiffHours : 0
-
-        for (const segment of segments) {
-          const minutes = Math.max(0, segment.end - segment.start)
-          if (minutes === 0) continue
-
-          const isNightConcept = segment.concepto === 35 || segment.concepto === 36
-          const applyDiff = isNightConcept && diffRemaining > 0
-          const diff = applyDiff ? diffRemaining * -1 : 0
-          if (applyDiff) diffRemaining = 0
-
-          const baseHours = minutesToHours(minutes)
-          const recargoHours = segment.concepto ? Math.max(0, baseHours + diff) : 0
-
+          const seg = computeDateSegment(dia, startMinutes, endMinutes, config, 0)
           addRowAggregated(rowsByKey, {
-            medico: doctor.name,
-            documento: null,
-            fecha: toDateOnly(segment.date),
-            turno_codigo: code,
-            entrada,
-            salida,
-            concepto: segment.concepto ?? conceptoDefault,
-            horas: baseHours,
-            horasrecargo: recargoHours,
-            diferencia: segment.concepto ? diff : 0,
-            dia: diaFromDate(segment.date),
-            mes: segment.date.getMonth() + 1,
-            dia_numero: segment.date.getDate(),
-          })
-        }
-      }
-    }
-  }
-
-  return [...rowsByKey.values()]
-}
-
-/**
- * Versión de display: una fila por médico+día, sin dividir turnos nocturnos
- * por medianoche. El recargo se calcula tomando TODAS las horas del turno
- * contra las ventanas del día de inicio, y la diferencia se aplica solo una vez.
- *
- * Esto evita el problema de que mapMonthsToTurnosRows genere dos filas para
- * un turno 20:00–06:00 y que al consolidarlas la diferencia se duplique.
- */
-export const computeDisplayRows = (
-  months: MonthSchedule[],
-  turnosByCode?: TurnosByCode,
-  recargoConfig?: RecargoConfig,
-  conceptoDefault = 0
-): TurnoMedicoRow[] => {
-  const config = normalizeRecargoConfig(recargoConfig)
-  const rows: TurnoMedicoRow[] = []
-
-  for (const month of months) {
-    for (const doctor of month.doctors) {
-      for (const day of month.days.filter((d) => !d.isWeeklyTotal)) {
-        const date = safeDateFromMonthAndDay(month.month, day.dayNumber)
-        if (!date) continue
-
-        const cell = doctor.shifts[day.dayNumber]
-        const code = (cell?.code ?? "").trim().toUpperCase()
-        const { entrada, salida } = splitTurnoTimes(code, turnosByCode)
-        const dia = diaFromDate(date)
-        const startMin = toMinutes(entrada)
-        const endMin = toMinutes(salida)
-
-        if (startMin === null || endMin === null) {
-          rows.push({
             medico: doctor.name,
             documento: null,
             fecha: toDateOnly(date),
             turno_codigo: code,
             entrada,
             salida,
-            concepto: conceptoDefault,
-            horas: cell?.hours ?? 0,
-            horasrecargo: 0,
-            diferencia: 0,
+            concepto: seg.concepto || conceptoDefault,
+            horas: cell?.hours ?? seg.horas,
+            horasrecargo: seg.horasrecargo,
+            diferencia: seg.diferencia,
             dia,
             mes: date.getMonth() + 1,
             dia_numero: day.dayNumber,
