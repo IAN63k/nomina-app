@@ -137,6 +137,15 @@ const toMinutes = (time: string | null | undefined): number | null => {
 
 const minutesToHours = (minutes: number) => Number((minutes / 60).toFixed(2))
 
+// Convierte minutos del día a "HH:MM". La medianoche final se expresa como "24:00"
+// para diferenciar el cierre de un segmento (20:00–24:00) del inicio del siguiente (00:00–06:00).
+const minutesToTimeLabel = (minutes: number) => {
+  const clamped = Math.max(0, minutes)
+  const hours = Math.floor(clamped / 60)
+  const mins = clamped % 60
+  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
+}
+
 const addDays = (date: Date, days: number) => {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
