@@ -289,6 +289,70 @@ const recalculateDoctorTotals = (doctor: DoctorSchedule, days: DayHeader[]) => {
   }
 }
 
+/**
+ * Calcula el recargo de un tramo [fromMin, toMin] de UNA sola fecha contra las
+ * ventanas nocturnas de su tipo de día. Devuelve las horas base del tramo, las
+ * horas de recargo (descontando `diffHours` si aplica), el concepto dominante y
+ * la diferencia aplicada. `diffHours` solo se pasa (> 0) en el segmento posterior
+ * a la medianoche de un turno partido.
+ */
+const computeDateSegment = (
+  dia: DiaBD,
+  fromMin: number,
+  toMin: number,
+  config: RecargoConfig,
+  diffHours = 0
+) => {
+  const windows = getRecargoWindows(dia, config)
+  const parts = splitByWindows(fromMin, toMin, windows)
+
+  let recargoMins = 0
+  const minutesByConcepto = new Map<number, number>()
+
+  for (const part of parts) {
+    if (!part.concepto) continue
+    const mins = Math.max(0, part.end - part.start)
+    if (mins === 0) continue
+    recargoMins += mins
+    minutesByConcepto.set(part.concepto, (minutesByConcepto.get(part.concepto) ?? 0) + mins)
+  }
+
+  // Concepto dominante: el que acumula más minutos de recargo dentro del tramo.
+  let concepto = 0
+  let bestMins = 0
+  for (const [code, mins] of minutesByConcepto) {
+    if (mins > bestMins) {
+      bestMins = mins
+      concepto = code
+    }
+  }
+
+  const diffMins = diffHours > 0 ? Math.min(recargoMins, Math.round(diffHours * 60)) : 0
+  const horasrecargo = minutesToHours(Math.max(0, recargoMins - diffMins))
+  const diferencia = diffMins > 0 ? -minutesToHours(diffMins) : 0
+
+  return {
+    concepto,
+    horas: minutesToHours(Math.max(0, toMin - fromMin)),
+    horasrecargo,
+    diferencia,
+  }
+}
+
+/**
+ * Construye las filas de turnos a partir de los meses cargados.
+ *
+ * Esta es la ÚNICA fuente de verdad: se usa tanto para la tabla de detalle y la
+ * exportación TXT como para el guardado en BD. Un turno que cruza la medianoche se
+ * parte en dos filas diferenciadas por fecha:
+ *   - Segmento 1: desde la entrada hasta 24:00, con el concepto del día de inicio.
+ *   - Segmento 2: desde 00:00 hasta la salida (día siguiente), con su propio concepto
+ *     y el descuento nocturno (`nightDiffHours`) aplicado solo aquí.
+ *
+ * Las filas se agregan por (medico, fecha) para respetar la restricción única de la
+ * tabla `turnos_medicos`; así el segmento posterior se fusiona con la celda propia de
+ * ese día (p. ej. un "L"/Libre) sin perder el recargo.
+ */
 export const mapMonthsToTurnosRows = (
   months: MonthSchedule[],
   turnosByCode?: TurnosByCode,
