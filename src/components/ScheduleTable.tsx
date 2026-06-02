@@ -1,4 +1,4 @@
-import { SHIFT_CODES, SHIFT_COLOR_BY_CODE, SHIFT_DETAILS, SHIFT_OPTION_LABELS, SHIFT_SELECTABLE_CODES, SHIFT_TIME_RANGES } from "@/src/constants/shifts";
+import { SHIFT_CODES, SHIFT_COLOR_BY_CODE, SHIFT_DETAILS, SHIFT_OPTION_LABELS, SHIFT_TIME_RANGES } from "@/src/constants/shifts";
 import { MonthSchedule, ShiftCode } from "@/src/types/schedule";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -11,14 +11,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+type ShiftDetail = { label: string; bg: string; text: string; border: string; description?: string };
+type ShiftColors = { bg: string; text: string; border: string };
+
 type ScheduleTableProps = {
   month?: MonthSchedule;
-  onShiftChange?: (doctorName: string, dayNumber: number, code: ShiftCode) => void;
-  timeRangeByCode?: Partial<Record<ShiftCode, string>>;
+  onShiftChange?: (doctorName: string, dayNumber: number, code: string) => void;
+  timeRangeByCode?: Partial<Record<string, string>>;
   availableTurnos?: string[];
+  nameLabel?: string;
+  /** Catálogo de detalles/colores por código. Default: turnos de médicos. */
+  shiftDetails?: Record<string, ShiftDetail>;
+  shiftColors?: Record<string, ShiftColors>;
 };
 
-export function ScheduleTable({ month, onShiftChange, timeRangeByCode, availableTurnos = SHIFT_CODES }: ScheduleTableProps) {
+export function ScheduleTable({
+  month,
+  onShiftChange,
+  timeRangeByCode,
+  availableTurnos = SHIFT_CODES,
+  nameLabel = "Médico",
+  shiftDetails = SHIFT_DETAILS,
+  shiftColors = SHIFT_COLOR_BY_CODE,
+}: ScheduleTableProps) {
   if (!month) return null;
   if (!month.days.length || !month.doctors.length) {
     return (
@@ -40,7 +55,7 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-1.5">
         {availableTurnos.map((code) => {
-          const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS];
+          const shift = shiftDetails[code];
           const colors = shift || {
             bg: "bg-slate-200",
             text: "text-slate-900",
@@ -83,18 +98,18 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
                 className="sticky left-0 top-0 z-30 w-52 border-b border-border bg-background px-4 py-2.5 text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground"
                 style={{ boxShadow: "1px 0 0 0 var(--border)" }}
               >
-                Médico
+                {nameLabel}
               </th>
 
               {/* Day headers */}
-              {month.days.map((day) => {
+              {month.days.map((day, dayIdx) => {
                 const isWeeklyTotal = day.isWeeklyTotal;
                 const isSunday = day.isSunday;
 
                 if (isWeeklyTotal) {
                   return (
                     <th
-                      key={`${day.dayLabel}-${day.dayNumber}-total`}
+                      key={`h-${dayIdx}-total`}
                       className="sticky top-0 z-20 border-b border-l border-border bg-foreground px-2 py-2.5 text-center align-middle"
                     >
                       <div className="text-[9px] font-semibold uppercase tracking-widest text-background/60">
@@ -106,7 +121,7 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
 
                 return (
                   <th
-                    key={`${day.dayLabel}-${day.dayNumber}`}
+                    key={`h-${dayIdx}`}
                     className={`sticky top-0 z-20 border-b border-border px-1 py-2.5 text-center align-middle ${
                       isSunday ? "bg-red-50" : "bg-background"
                     }`}
@@ -144,7 +159,7 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
           <tbody>
             {month.doctors.map((doctor, rowIdx) => (
               <tr
-                key={doctor.name}
+                key={`${doctor.name}-${rowIdx}`}
                 className="group transition-colors hover:bg-muted/25"
               >
                 {/* Doctor name */}
@@ -157,12 +172,12 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
                 </td>
 
                 {/* Day cells */}
-                {month.days.map((day) => {
+                {month.days.map((day, dayIdx) => {
                   if (day.isWeeklyTotal) {
                     const value = getWeeklyTotalValue(doctor, day.dayLabel);
                     return (
                       <td
-                        key={`${doctor.name}-${day.dayLabel}-${day.dayNumber}`}
+                        key={`${rowIdx}-${dayIdx}-total`}
                         className="border-b border-l border-border bg-foreground/95 px-2 py-2 text-center"
                       >
                         <span className="font-mono text-xs font-semibold tabular-nums text-background/90">
@@ -174,18 +189,18 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
 
                   const cell = doctor.shifts[day.dayNumber];
                   const cellCode = cell?.code ?? "";
-                  const colors = SHIFT_COLOR_BY_CODE[cellCode] || {
+                  const colors = shiftColors[cellCode] || {
                     bg: "bg-transparent",
                     text: "text-foreground/30",
                     border: "border-border/40",
                   };
-                  const detail = cell?.code ? SHIFT_DETAILS[cell.code as keyof typeof SHIFT_DETAILS] : null;
+                  const detail = cell?.code ? shiftDetails[cell.code] : null;
                   const codeForRange = cell?.code ?? "";
-                  const timeRange = timeRangeByCode?.[codeForRange] ?? SHIFT_TIME_RANGES[codeForRange] ?? "Sin horario";
+                  const timeRange = timeRangeByCode?.[codeForRange] ?? SHIFT_TIME_RANGES[codeForRange as ShiftCode] ?? "Sin horario";
 
                   return (
                     <td
-                      key={`${doctor.name}-${day.dayNumber}`}
+                      key={`${rowIdx}-${dayIdx}`}
                       className={`border-b border-border px-1 py-1.5 text-center align-middle ${
                         day.isSunday ? "bg-red-50/60" : ""
                       }`}
@@ -214,18 +229,18 @@ export function ScheduleTable({ month, onShiftChange, timeRangeByCode, available
                                   <DropdownMenuRadioGroup
                                     value={cell?.code ?? ""}
                                     onValueChange={(value) =>
-                                      onShiftChange(doctor.name, day.dayNumber, value as ShiftCode)
+                                      onShiftChange(doctor.name, day.dayNumber, value)
                                     }
                                   >
                                     <DropdownMenuRadioItem value="">
                                       {SHIFT_OPTION_LABELS[""]}
                                     </DropdownMenuRadioItem>
                                     {availableTurnos.map((code) => {
-                                      const shift = SHIFT_DETAILS[code as keyof typeof SHIFT_DETAILS];
+                                      const shift = shiftDetails[code];
                                       const label = shift?.label || code;
                                       return (
                                         <DropdownMenuRadioItem key={code} value={code}>
-                                          <span className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${SHIFT_COLOR_BY_CODE[code as ShiftCode]?.bg ?? ""} ${SHIFT_COLOR_BY_CODE[code as ShiftCode]?.text ?? ""}`}>
+                                          <span className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${shiftColors[code]?.bg ?? ""} ${shiftColors[code]?.text ?? ""}`}>
                                             {code}
                                           </span>
                                           {label}

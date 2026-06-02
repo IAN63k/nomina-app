@@ -7,6 +7,7 @@ import { FileSpreadsheet } from "lucide-react";
 import { RecargosAuxiliaresTab } from "@/components/recargos/auxiliares-tab";
 import { RecargosMedicosTab } from "@/components/recargos/medicos-tab";
 import { MedicosSettings } from "@/components/recargos/medicos-settings";
+import { AuxiliaresSettings } from "@/components/recargos/auxiliares-settings";
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context";
 
 type RecargosTab = "medicos" | "auxiliares";
@@ -25,8 +26,8 @@ export default function Recargos() {
         } else {
             setConfig({
                 title: "Ajustes — Auxiliares",
-                description: "Configuración para recargos de auxiliares.",
-                content: null,
+                description: "Configuración de turnos para recargos de auxiliares.",
+                content: <AuxiliaresSettings />,
             });
         }
         return () => resetConfig();
