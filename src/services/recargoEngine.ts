@@ -368,7 +368,7 @@ type Segment = {
   thresholdFestivo: boolean // festivo que dispara el tope semanal (NO incluye domingo)
   startMin: number | null // null = sin horario configurado
   endMin: number | null
-  horas: number // horas trabajadas del segmento
+  horas: number // horas oficiales que cuentan para el tope semanal (de cell.hours)
   diffHours: number // descuento nocturno aplicable (solo el segmento post-medianoche)
   entrada: string | null
   salida: string | null
@@ -526,10 +526,20 @@ export const buildTurnoRows = (
           continue
         }
 
-        // Turno partido por medianoche → dos segmentos (uno por fecha).
-        pushSegment(date, startMinutes, 1440, entrada, minutesToTimeLabel(1440), 0, minutesToHours(1440 - startMinutes))
+        // Turno partido por medianoche → dos segmentos (uno por fecha). Las horas
+        // que cuentan para el tope semanal son las oficiales del turno (`cell.hours`,
+        // p. ej. una Noche de 9h), NO los minutos del rango (que sumarían 10h). Se
+        // reparten entre ambos segmentos en proporción a sus minutos para que la
+        // acumulación coincida con el total semanal real.
+        const segAMin = 1440 - startMinutes
+        const segBMin = endMinutes
+        const totalMin = segAMin + segBMin
+        const cellHoras = cell?.hours ?? minutesToHours(totalMin)
+        const segAHoras = Number(((cellHoras * segAMin) / totalMin).toFixed(2))
+        const segBHoras = Number((cellHoras - segAHoras).toFixed(2))
+        pushSegment(date, startMinutes, 1440, entrada, minutesToTimeLabel(1440), 0, segAHoras)
         const nextDay = addDays(date, 1)
-        pushSegment(nextDay, 0, endMinutes, minutesToTimeLabel(0), salida, config.nightDiffHours, minutesToHours(endMinutes))
+        pushSegment(nextDay, 0, endMinutes, minutesToTimeLabel(0), salida, config.nightDiffHours, segBHoras)
       }
     }
   }
