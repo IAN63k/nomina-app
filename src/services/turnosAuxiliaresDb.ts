@@ -13,7 +13,6 @@ import { normalizeAuxCode } from "@/src/constants/auxiliaresShifts"
 import {
   buildMonthsFromRows,
   buildTurnoRows,
-  diaFromDate,
   type TurnoRow,
   type TurnosByCode,
 } from "@/src/services/recargoEngine"
@@ -32,8 +31,7 @@ export const mapAuxMonthsToTurnosRows = (
     turnosByCode,
     recargoConfig,
     conceptoDefault,
-    // Festivo (/DF) → se calcula como dominical (conceptos 35/39).
-    getEffectiveDia: (date, cell) => (cell?.festivo ? "D" : diaFromDate(date)),
+    // El motor ya calcula festivos por calendario; el "/DF" del Excel los refuerza.
     isFestivo: (cell) => Boolean(cell?.festivo),
   })
 
@@ -66,7 +64,7 @@ export async function upsertTurnosAuxiliares(rows: TurnoAuxiliarRow[]) {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase
     .from("turnos_auxiliares")
-    .upsert(payload, { onConflict: "medico,fecha" })
+    .upsert(payload, { onConflict: "medico,fecha,concepto" })
 
   if (error) {
     throw new Error(error.message)
