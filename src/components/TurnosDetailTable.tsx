@@ -380,7 +380,7 @@ export function TurnosDetailTable({ rows }: Props) {
               }
               const horario = row.entrada && row.salida ? `${row.entrada} – ${row.salida}` : "—"
               const conceptoLabel = CONCEPTO_LABELS[row.concepto] ?? String(row.concepto)
-              const diaLabel = DIA_LABELS[row.dia] ?? row.dia
+              const diaLabel = row.festivo ? "Festivo" : (DIA_LABELS[row.dia] ?? row.dia)
               const isEven = i % 2 === 0
 
               return (
@@ -440,6 +440,7 @@ export function TurnosDetailTable({ rows }: Props) {
                   {/* Día */}
                   <td className="border-b border-border/50 px-3 py-2 text-center">
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      row.festivo ? "bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-200" :
                       row.dia === "D" ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200" :
                       row.dia === "S" ? "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200" :
                       "bg-muted text-muted-foreground ring-1 ring-inset ring-border"
