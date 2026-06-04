@@ -363,9 +363,10 @@ type Segment = {
   turno_codigo: string
   date: Date
   fecha: string
+  weekKey: string // semana (lunes) del DÍA DE INICIO del turno, para el tope semanal
   effectiveDia: DiaBD // domingo o festivo → "D"; alimenta recargo, extras y la columna Día
-  festivo: boolean // marca de festivo para la fila (calendario o /DF)
-  thresholdFestivo: boolean // festivo que dispara el tope semanal (NO incluye domingo)
+  festivo: boolean // marca de festivo de la FILA (calendario o /DF en la fecha física)
+  manualFestivo: boolean // solo marca manual "/DF" del turno; dispara el tope semanal
   startMin: number | null // null = sin horario configurado
   endMin: number | null
   horas: number // horas oficiales que cuentan para el tope semanal (de cell.hours)
@@ -491,18 +492,24 @@ export const buildTurnoRows = (
           diffHours: number,
           horas: number
         ) => {
-          const thresholdFestivo = isFestivo(cell) || isFestivoColombia(segDate)
+          const manualFestivo = isFestivo(cell)
+          // Festivo de la fecha física (calendario o /DF): define el tipo de día efectivo
+          // y la marca de la fila. NO se usa para decidir si la semana tiene festivo.
+          const festivoFecha = manualFestivo || isFestivoColombia(segDate)
           const realDia = diaFromDate(segDate)
-          const effectiveDia: DiaBD = realDia === "D" || thresholdFestivo ? "D" : realDia
+          const effectiveDia: DiaBD = realDia === "D" || festivoFecha ? "D" : realDia
           segments.push({
             medico: doctor.name,
             documento: null,
             turno_codigo: code,
             date: segDate,
             fecha: toDateOnly(segDate),
+            // El turno pertenece a la semana de su día de INICIO (`date`), aunque su
+            // segmento post-medianoche caiga en el lunes de la semana siguiente.
+            weekKey: mondayKey(date),
             effectiveDia,
-            festivo: thresholdFestivo,
-            thresholdFestivo,
+            festivo: festivoFecha,
+            manualFestivo,
             startMin: sMin,
             endMin: eMin,
             horas,
@@ -544,10 +551,10 @@ export const buildTurnoRows = (
     }
   }
 
-  // 2) Agrupar por (medico, semana lunes–domingo) para evaluar el tope semanal.
+  // 2) Agrupar por (medico, semana de inicio) para evaluar el tope semanal.
   const groups = new Map<string, Segment[]>()
   for (const seg of segments) {
-    const key = `${seg.medico}|${mondayKey(seg.date)}`
+    const key = `${seg.medico}|${seg.weekKey}`
     const list = groups.get(key)
     if (list) list.push(seg)
     else groups.set(key, [seg])
@@ -556,9 +563,12 @@ export const buildTurnoRows = (
   const rowsByKey = new Map<string, TurnoRow>()
 
   for (const [, group] of groups) {
-    // ¿La semana contiene festivo? Revisar los 7 días (aunque no se trabajen) + /DF.
-    const monday = new Date(`${mondayKey(group[0].date)}T00:00:00`)
-    let festivoWeek = group.some((s) => s.thresholdFestivo)
+    // ¿La semana (de inicio) contiene festivo? Festivo de calendario en cualquiera de
+    // sus 7 días (aunque no se trabaje), o marca manual "/DF" de un turno que inicia en
+    // la semana. NO se considera la fecha física de un segmento post-medianoche, que
+    // puede caer en el lunes festivo de la semana siguiente.
+    const monday = new Date(`${group[0].weekKey}T00:00:00`)
+    let festivoWeek = group.some((s) => s.manualFestivo)
     for (let d = 0; d < 7 && !festivoWeek; d += 1) {
       if (isFestivoColombia(addDays(monday, d))) festivoWeek = true
     }
@@ -621,13 +631,23 @@ export const buildTurnoRows = (
       }
     }
 
-    const emitExtra = (seg: Segment, from: number, to: number) => {
-      for (const part of classifyExtra(seg.effectiveDia, from, to, config)) {
+    // Emite la parte extra [from, to] clasificada en 31–34. La franja [from, to] es de
+    // reloj, pero la CANTIDAD total se escala a `officialHoras` (las horas oficiales del
+    // turno que exceden el tope) para que coincida con el conteo del tope (p. ej. una
+    // Noche cuenta 9h oficiales, no 10h de rango). El reparto diurna/nocturna conserva
+    // la proporción de reloj.
+    const emitExtra = (seg: Segment, from: number, to: number, officialHoras: number) => {
+      const parts = classifyExtra(seg.effectiveDia, from, to, config)
+      const rangeHoras = parts.reduce((sum, p) => sum + p.horas, 0)
+      if (rangeHoras <= 0 || officialHoras <= 0) return
+      const scale = officialHoras / rangeHoras
+      for (const part of parts) {
+        const horas = Number((part.horas * scale).toFixed(2))
         addRowAggregated(
           rowsByKey,
           baseRow(seg, part.concepto, {
-            horas: part.horas,
-            horasrecargo: part.horas, // "Cantidad" que exporta el TXT
+            horas,
+            horasrecargo: horas, // "Cantidad" que exporta el TXT
             diferencia: 0,
             entrada: minutesToTimeLabel(from),
             salida: minutesToTimeLabel(to),
@@ -653,19 +673,20 @@ export const buildTurnoRows = (
       cumulative = after
 
       if (before >= WEEKLY_FESTIVO_CAP) {
-        // Totalmente extra.
-        emitExtra(seg, seg.startMin, seg.endMin)
+        // Totalmente extra: la cantidad oficial es la del propio turno.
+        emitExtra(seg, seg.startMin, seg.endMin, seg.horas)
       } else if (after <= WEEKLY_FESTIVO_CAP) {
         // Totalmente ordinario.
         emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
       } else {
         // Cruza el tope de 37h: partir en ordinario + extra (proporcional al rango).
         const ordinaryHoras = WEEKLY_FESTIVO_CAP - before
+        const extraHoras = seg.horas - ordinaryHoras
         const rangeMin = seg.endMin - seg.startMin
         const rawSplit = seg.startMin + Math.round((ordinaryHoras / seg.horas) * rangeMin)
         const splitMin = Math.min(seg.endMin, Math.max(seg.startMin, rawSplit))
         emitOrdinary(seg, seg.startMin, splitMin, seg.entrada, minutesToTimeLabel(splitMin))
-        emitExtra(seg, splitMin, seg.endMin)
+        emitExtra(seg, splitMin, seg.endMin, extraHoras)
       }
     }
   }
