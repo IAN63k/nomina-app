@@ -17,6 +17,10 @@ type SortDir = "asc" | "desc"
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 
 const CONCEPTO_LABELS: Record<number, string> = {
+  31: "Extra Diurna",
+  32: "Extra Nocturna",
+  33: "Extra Fest. Diurna",
+  34: "Extra Fest. Nocturna",
   35: "Rec. Dom. Nocturno",
   36: "Rec. Lab. Nocturno",
   39: "Horas Dominicales",

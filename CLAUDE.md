@@ -62,6 +62,15 @@ Two component areas coexist due to ongoing migration:
 
 Configurable night window (default 19:00–06:00). When a shift crosses into the night window, premium hours (`horasrecargo`) are computed automatically. Conceptos 35/36/39 classify the overtime type for accounting.
 
+### Horas Extra — jornada semanal reducida por festivo (37h)
+
+Colombian rule: the ordinary weekly journey is 44h, but **if a week contains at least one holiday it drops to 37h** for médicos and auxiliares. Anything worked beyond 37h that week is reclassified as overtime (hora extra), **exclusive** of the ordinary night recargo (a given hour is either ordinary-with-recargo or extra, never both).
+
+- Engine: `recargoEngine.ts` builds per-date segments, then a weekly pass (`buildTurnoRows`) groups by `(medico, Mon–Sun week)`. If the week has a holiday, it accumulates worked hours chronologically and, once 37h (`WEEKLY_FESTIVO_CAP`) is reached, splits the crossing shift into ordinary + extra and classifies the excess.
+- Holidays come from `src/services/festivosColombia.ts` (`isFestivoColombia`: fixed + Ley Emiliani + Easter-based), applied to **both** módulos. Auxiliares' `/DF` reinforces it. Plain Sundays do **not** trigger the 37h reduction. Médicos now also honors calendar holidays for recargo/extra classification.
+- Extra conceptos (quantity = extra hours, carried in `horasrecargo` so the TXT exports them): **31** diurna ordinaria (L–S, 06:00–19:00), **32** nocturna ordinaria (L–S, 19:00–06:00), **33** festiva diurna (dom/festivo, 06:00–19:00), **34** festiva nocturna (dom/festivo, 19:00–06:00). The diurnal/nocturnal split uses the shared `recargoConfig` night window.
+- Rows aggregate by `(medico, fecha, concepto)` — a day may yield several rows. The DB unique key must match; run `docs/migracion_concepto_unique.sql` once in Supabase.
+
 ### Recargos Module (Médicos & Auxiliares)
 
 The Recargos page (`/recargos`) has two tabs that share one pure calculation engine — **`src/services/recargoEngine.ts` is the single source of truth**; the detail table, TXT export, and DB save all derive from `buildTurnoRows`. Never duplicate recargo logic in the UI. A shift crossing midnight is split into two rows (entry→24:00, then 00:00→exit with the `nightDiffHours` discount), aggregated by `(medico, fecha)`.
@@ -87,4 +96,4 @@ SUPABASE_SERVICE_ROLE_KEY        # Server-only service role key
 
 ### DB Table: `turnos_medicos`
 
-Columns: `medico`, `fecha`, `turno_codigo`, `entrada`, `salida`, `horas`, `horasrecargo`, `concepto`, `dia` (D=Sunday, H=Weekday, S=Saturday)
+Columns: `medico`, `fecha`, `turno_codigo`, `entrada`, `salida`, `horas`, `horasrecargo`, `concepto`, `dia` (D=Sunday, H=Weekday, S=Saturday). Unique key: `(medico, fecha, concepto)` — multiple conceptos per day (recargo + extra) coexist as separate rows.

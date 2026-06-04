@@ -66,7 +66,7 @@ export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase
     .from("turnos_medicos")
-    .upsert(payload, { onConflict: "medico,fecha" })
+    .upsert(payload, { onConflict: "medico,fecha,concepto" })
 
   if (error) {
     throw new Error(error.message)
