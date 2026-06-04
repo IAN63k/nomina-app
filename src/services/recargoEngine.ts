@@ -276,8 +276,20 @@ const recargoMinsByConcepto = (
 // Agrega por (medico, fecha, concepto): un mismo día puede tener varias líneas de
 // concepto distinto (p. ej. recargo nocturno 36 + hora extra 32) que conviven como
 // filas separadas, alineado con la clave única (medico, fecha, concepto) en BD.
-const addRowAggregated = (rowsByKey: Map<string, TurnoRow>, row: TurnoRow) => {
-  const key = `${row.medico}|${row.fecha}|${row.concepto}`
+//
+// `splitByTimeRange` añade entrada|salida a la clave: así, dos tramos del MISMO
+// concepto que caen en la misma fecha pero en franjas distintas (p. ej. la cola
+// 00:00–06:00 de la noche anterior y la cabeza 20:00–24:00 de la noche del día, ambas
+// concepto 36) NO se funden en una sola fila. Se usa solo en la vista de detalle; el
+// guardado en BD sigue agregando por (medico, fecha, concepto) para respetar su clave única.
+const addRowAggregated = (
+  rowsByKey: Map<string, TurnoRow>,
+  row: TurnoRow,
+  splitByTimeRange = false
+) => {
+  const key = splitByTimeRange
+    ? `${row.medico}|${row.fecha}|${row.concepto}|${row.entrada ?? ""}|${row.salida ?? ""}`
+    : `${row.medico}|${row.fecha}|${row.concepto}`
   const existing = rowsByKey.get(key)
   if (!existing) {
     rowsByKey.set(key, row)
@@ -352,6 +364,12 @@ export type BuildTurnoRowsOptions = {
   conceptoDefault?: number
   /** Marca la fila como festivo (p. ej. sufijo "/DF" en auxiliares). Default: false. */
   isFestivo?: (cell?: ShiftCell) => boolean
+  /**
+   * Mantiene separadas las filas del mismo (medico, fecha, concepto) cuando difieren en
+   * franja horaria (entrada/salida). Pensado para la tabla de detalle, donde fundir la
+   * cola post-medianoche con la cabeza de la noche siguiente confunde la lectura. El
+   * guardado en BD debe dejarlo en `false` (default) para respetar su clave única. */
+  splitByTimeRange?: boolean
 }
 
 // Segmento de turno dentro de UNA fecha, antes de agregar. Un turno que cruza la
@@ -462,7 +480,13 @@ export const buildTurnoRows = (
   months: MonthSchedule[],
   options: BuildTurnoRowsOptions = {}
 ): TurnoRow[] => {
-  const { turnosByCode, recargoConfig, conceptoDefault = 0, isFestivo = () => false } = options
+  const {
+    turnosByCode,
+    recargoConfig,
+    conceptoDefault = 0,
+    isFestivo = () => false,
+    splitByTimeRange = false,
+  } = options
 
   const config = normalizeRecargoConfig(recargoConfig)
 
@@ -604,7 +628,8 @@ export const buildTurnoRows = (
               horas: minutesToHours(mins),
               entrada: segEntrada,
               salida: segSalida,
-            })
+            }),
+            splitByTimeRange
           )
           continue
         }
@@ -626,7 +651,8 @@ export const buildTurnoRows = (
             diferencia,
             entrada: segEntrada,
             salida: segSalida,
-          })
+          }),
+          splitByTimeRange
         )
       }
     }
@@ -651,7 +677,8 @@ export const buildTurnoRows = (
             diferencia: 0,
             entrada: minutesToTimeLabel(from),
             salida: minutesToTimeLabel(to),
-          })
+          }),
+          splitByTimeRange
         )
       }
     }
@@ -659,7 +686,7 @@ export const buildTurnoRows = (
     for (const seg of ordered) {
       // Segmento sin horario: fila simple de paso (no acumula ni genera extra).
       if (seg.startMin === null || seg.endMin === null) {
-        addRowAggregated(rowsByKey, baseRow(seg, conceptoDefault, { horas: seg.horas }))
+        addRowAggregated(rowsByKey, baseRow(seg, conceptoDefault, { horas: seg.horas }), splitByTimeRange)
         continue
       }
 

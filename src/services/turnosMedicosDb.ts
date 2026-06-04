@@ -38,10 +38,19 @@ export const mapMonthsToTurnosRows = (
 ): TurnoMedicoRow[] => buildTurnoRows(months, { turnosByCode, recargoConfig, conceptoDefault })
 
 /**
- * Alias retenido por compatibilidad. La tabla de detalle y el TXT usan exactamente
- * la misma partición por medianoche que el guardado en BD.
+ * Filas para la VISTA de detalle. Misma partición por medianoche que el guardado, pero
+ * con `splitByTimeRange`: dos tramos del mismo concepto en franjas distintas (p. ej. la
+ * cola 00:00–06:00 de la noche anterior y la cabeza 20:00–24:00 de la noche del día)
+ * se muestran en filas separadas en vez de fundirse. El guardado en BD sigue agregando
+ * por (medico, fecha, concepto) vía `mapMonthsToTurnosRows`.
  */
-export const computeDisplayRows = mapMonthsToTurnosRows
+export const computeDisplayRows = (
+  months: MonthSchedule[],
+  turnosByCode?: TurnosByCode,
+  recargoConfig?: RecargoConfig,
+  conceptoDefault = 0
+): TurnoMedicoRow[] =>
+  buildTurnoRows(months, { turnosByCode, recargoConfig, conceptoDefault, splitByTimeRange: true })
 
 export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   if (!rows.length) return 0
