@@ -10,7 +10,7 @@
  *   a ningún backend ni se almacenan fuera del navegador del usuario.
  */
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react"
 
 export type Empleado = {
   nombre: string
@@ -57,14 +57,34 @@ export function EmpleadosProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [])
 
+  // Índice de búsqueda: dos llaves por empleado para tolerar diferencias de orden
+  // de palabras ("Apellidos Nombres" vs "Nombres Apellidos") y de espacios internos.
+  const cedulaIndex = useMemo(() => {
+    const byFull = new Map<string, string>()
+    const byTokens = new Map<string, string>()
+    for (const e of empleados) {
+      const full = normalize(e.nombre)
+      if (!full) continue
+      if (!byFull.has(full)) byFull.set(full, e.cedula)
+      const tokens = tokenKey(full)
+      if (!byTokens.has(tokens)) byTokens.set(tokens, e.cedula)
+    }
+    return { byFull, byTokens }
+  }, [empleados])
+
   const getCedulaByName = useCallback(
     (nombre: string): string => {
       if (!empleados.length) return "0000000000"
       const q = normalize(nombre)
-      const found = empleados.find((e) => normalize(e.nombre) === q)
-      return found?.cedula ?? "0000000000"
+      // 1) Coincidencia exacta del nombre completo.
+      const exact = cedulaIndex.byFull.get(q)
+      if (exact) return exact
+      // 2) Mismas palabras en distinto orden.
+      const byTokens = cedulaIndex.byTokens.get(tokenKey(q))
+      if (byTokens) return byTokens
+      return "0000000000"
     },
-    [empleados]
+    [empleados, cedulaIndex]
   )
 
   return (
@@ -88,4 +108,12 @@ function normalize(str: string) {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // quitar tildes
+    .replace(/\s+/g, " ") // colapsar espacios internos m\u00faltiples
+}
+
+// Llave independiente del orden de las palabras: tokens ordenados alfab\u00e9ticamente.
+// Recibe un nombre YA normalizado. Permite cruzar "garcia lopez juan" con
+// "juan garcia lopez".
+function tokenKey(normalized: string) {
+  return normalized.split(" ").filter(Boolean).sort().join(" ")
 }
