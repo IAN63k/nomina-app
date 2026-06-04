@@ -36,10 +36,24 @@ export const mapAuxMonthsToTurnosRows = (
   })
 
 /**
- * Alias retenido por consistencia con médicos: la tabla de detalle y el TXT usan la
- * misma partición por medianoche que el guardado en BD.
+ * Filas para la VISTA de detalle (auxiliares). Igual que el guardado pero con
+ * `splitByTimeRange`: dos tramos del mismo concepto en franjas distintas dentro de la
+ * misma fecha (cola post-medianoche + cabeza de la noche del día) se muestran en filas
+ * separadas. El guardado en BD agrega por (medico, fecha, concepto) vía `mapAuxMonthsToTurnosRows`.
  */
-export const computeAuxDisplayRows = mapAuxMonthsToTurnosRows
+export const computeAuxDisplayRows = (
+  months: MonthSchedule[],
+  turnosByCode?: TurnosByCode,
+  recargoConfig?: RecargoConfig,
+  conceptoDefault = 0
+): TurnoAuxiliarRow[] =>
+  buildTurnoRows(months, {
+    turnosByCode,
+    recargoConfig,
+    conceptoDefault,
+    isFestivo: (cell) => Boolean(cell?.festivo),
+    splitByTimeRange: true,
+  })
 
 export async function upsertTurnosAuxiliares(rows: TurnoAuxiliarRow[]) {
   if (!rows.length) return 0

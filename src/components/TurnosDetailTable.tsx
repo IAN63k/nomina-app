@@ -139,14 +139,21 @@ export function TurnosDetailTable({ rows }: Props) {
   }
 
   const exportTxt = useCallback(() => {
-    const lines = periodRows
-      .filter(r => r.horasrecargo > 0)
-      .map(r => {
-        const cedula = r.documento
-          ? String(r.documento)
-          : getCedulaByName(r.medico)
-        return `${cedula}\t${r.concepto}\t${r.horasrecargo}`
-      })
+    // La tabla puede mostrar un mismo (medico, fecha, concepto) partido en varias filas
+    // por franja horaria (cola post-medianoche + cabeza de la noche), pero la BD y la
+    // nómina esperan UNA línea por (medico, fecha, concepto). Re-agregamos aquí.
+    const aggregated = new Map<string, { cedula: string; concepto: number; horasrecargo: number }>()
+    for (const r of periodRows) {
+      if (r.horasrecargo <= 0) continue
+      const cedula = r.documento ? String(r.documento) : getCedulaByName(r.medico)
+      const key = `${r.medico}|${r.fecha}|${r.concepto}`
+      const existing = aggregated.get(key)
+      if (existing) existing.horasrecargo = Number((existing.horasrecargo + r.horasrecargo).toFixed(2))
+      else aggregated.set(key, { cedula, concepto: r.concepto, horasrecargo: r.horasrecargo })
+    }
+    const lines = [...aggregated.values()].map(
+      r => `${r.cedula}\t${r.concepto}\t${r.horasrecargo}`
+    )
     const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement("a")
