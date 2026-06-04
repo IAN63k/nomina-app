@@ -239,54 +239,36 @@ const splitByWindows = (
   return parts
 }
 
+/** Conceptos de recargo nocturno (a los que aplica el descuento `nightDiffHours`). */
+const NIGHT_RECARGO_CONCEPTOS = new Set([35, 36])
+
 /**
- * Calcula el recargo de un tramo [fromMin, toMin] de UNA sola fecha contra las
- * ventanas nocturnas de su tipo de día. Devuelve las horas base del tramo, las
- * horas de recargo (descontando `diffHours` si aplica), el concepto dominante y
- * la diferencia aplicada. `diffHours` solo se pasa (> 0) en el segmento posterior
- * a la medianoche de un turno partido.
+ * Desglosa un tramo [fromMin, toMin] de UNA sola fecha en minutos por concepto de
+ * recargo según las ventanas de su tipo de día. La clave 0 agrupa los minutos
+ * neutros (horas ordinarias sin recargo, p. ej. el día de un turno hábil).
+ *
+ * A diferencia del enfoque anterior (un único concepto dominante por tramo), aquí se
+ * conservan TODOS los conceptos presentes para emitirlos como filas separadas
+ * (p. ej. en festivo: 39 diurno + 35 nocturno conviven en el mismo turno).
  */
-const computeDateSegment = (
+const recargoMinsByConcepto = (
   dia: DiaBD,
   fromMin: number,
   toMin: number,
-  config: RecargoConfig,
-  diffHours = 0
-) => {
+  config: RecargoConfig
+): Map<number, number> => {
   const windows = getRecargoWindows(dia, config)
   const parts = splitByWindows(fromMin, toMin, windows)
 
-  let recargoMins = 0
-  const minutesByConcepto = new Map<number, number>()
-
+  const minsByConcepto = new Map<number, number>()
   for (const part of parts) {
-    if (!part.concepto) continue
     const mins = Math.max(0, part.end - part.start)
     if (mins === 0) continue
-    recargoMins += mins
-    minutesByConcepto.set(part.concepto, (minutesByConcepto.get(part.concepto) ?? 0) + mins)
+    const key = part.concepto ?? 0 // 0 = neutro (horas base sin recargo)
+    minsByConcepto.set(key, (minsByConcepto.get(key) ?? 0) + mins)
   }
 
-  // Concepto dominante: el que acumula más minutos de recargo dentro del tramo.
-  let concepto = 0
-  let bestMins = 0
-  for (const [code, mins] of minutesByConcepto) {
-    if (mins > bestMins) {
-      bestMins = mins
-      concepto = code
-    }
-  }
-
-  const diffMins = diffHours > 0 ? Math.min(recargoMins, Math.round(diffHours * 60)) : 0
-  const horasrecargo = minutesToHours(Math.max(0, recargoMins - diffMins))
-  const diferencia = diffMins > 0 ? -minutesToHours(diffMins) : 0
-
-  return {
-    concepto,
-    horas: minutesToHours(Math.max(0, toMin - fromMin)),
-    horasrecargo,
-    diferencia,
-  }
+  return minsByConcepto
 }
 
 // ─── Agregación / reconstrucción ─────────────────────────────────────────────────
@@ -381,8 +363,7 @@ type Segment = {
   turno_codigo: string
   date: Date
   fecha: string
-  dia: DiaBD // día real (D/H/S) para la columna de la fila
-  effectiveDia: DiaBD // domingo o festivo → "D" (clasificación festiva)
+  effectiveDia: DiaBD // domingo o festivo → "D"; alimenta recargo, extras y la columna Día
   festivo: boolean // marca de festivo para la fila (calendario o /DF)
   thresholdFestivo: boolean // festivo que dispara el tope semanal (NO incluye domingo)
   startMin: number | null // null = sin horario configurado
@@ -452,7 +433,9 @@ const baseRow = (seg: Segment, concepto: number, override: Partial<TurnoRow>): T
   horas: 0,
   horasrecargo: 0,
   diferencia: 0,
-  dia: seg.dia,
+  // El día efectivo refleja el festivo (festivo/domingo → "D"), de modo que la
+  // clasificación de la fila es coherente con su concepto de recargo/extra.
+  dia: seg.effectiveDia,
   mes: seg.mes,
   dia_numero: seg.dia_numero,
   festivo: seg.festivo || undefined,
@@ -517,7 +500,6 @@ export const buildTurnoRows = (
             turno_codigo: code,
             date: segDate,
             fecha: toDateOnly(segDate),
-            dia: realDia,
             effectiveDia,
             festivo: thresholdFestivo,
             thresholdFestivo,
@@ -579,25 +561,54 @@ export const buildTurnoRows = (
 
     let cumulative = 0
 
+    // Emite la parte ordinaria del tramo [from, to] como UNA fila por concepto de
+    // recargo (35/36/39), más una fila neutra (concepto 0) por las horas base sin
+    // recargo. El descuento nocturno (`nightDiffHours`) se aplica al concepto
+    // nocturno (35/36) del segmento posterior a la medianoche.
     const emitOrdinary = (
       seg: Segment,
       from: number,
       to: number,
-      horas: number,
       segEntrada: string | null,
       segSalida: string | null
     ) => {
-      const calc = computeDateSegment(seg.effectiveDia, from, to, config, seg.diffHours)
-      addRowAggregated(
-        rowsByKey,
-        baseRow(seg, calc.concepto || conceptoDefault, {
-          horas,
-          horasrecargo: calc.horasrecargo,
-          diferencia: calc.diferencia,
-          entrada: segEntrada,
-          salida: segSalida,
-        })
-      )
+      const minsByConcepto = recargoMinsByConcepto(seg.effectiveDia, from, to, config)
+      let diffMins = seg.diffHours > 0 ? Math.round(seg.diffHours * 60) : 0
+
+      for (const [concepto, mins] of minsByConcepto) {
+        if (concepto === 0) {
+          // Horas base ordinarias (sin recargo).
+          addRowAggregated(
+            rowsByKey,
+            baseRow(seg, conceptoDefault, {
+              horas: minutesToHours(mins),
+              entrada: segEntrada,
+              salida: segSalida,
+            })
+          )
+          continue
+        }
+
+        let recargoMins = mins
+        let diferencia = 0
+        if (diffMins > 0 && NIGHT_RECARGO_CONCEPTOS.has(concepto)) {
+          const applied = Math.min(recargoMins, diffMins)
+          recargoMins -= applied
+          diferencia = -minutesToHours(applied)
+          diffMins -= applied
+        }
+
+        addRowAggregated(
+          rowsByKey,
+          baseRow(seg, concepto, {
+            horas: minutesToHours(mins),
+            horasrecargo: minutesToHours(recargoMins),
+            diferencia,
+            entrada: segEntrada,
+            salida: segSalida,
+          })
+        )
+      }
     }
 
     const emitExtra = (seg: Segment, from: number, to: number) => {
@@ -623,7 +634,7 @@ export const buildTurnoRows = (
       }
 
       if (!festivoWeek) {
-        emitOrdinary(seg, seg.startMin, seg.endMin, seg.horas, seg.entrada, seg.salida)
+        emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
         continue
       }
 
@@ -636,14 +647,14 @@ export const buildTurnoRows = (
         emitExtra(seg, seg.startMin, seg.endMin)
       } else if (after <= WEEKLY_FESTIVO_CAP) {
         // Totalmente ordinario.
-        emitOrdinary(seg, seg.startMin, seg.endMin, seg.horas, seg.entrada, seg.salida)
+        emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
       } else {
         // Cruza el tope de 37h: partir en ordinario + extra (proporcional al rango).
         const ordinaryHoras = WEEKLY_FESTIVO_CAP - before
         const rangeMin = seg.endMin - seg.startMin
         const rawSplit = seg.startMin + Math.round((ordinaryHoras / seg.horas) * rangeMin)
         const splitMin = Math.min(seg.endMin, Math.max(seg.startMin, rawSplit))
-        emitOrdinary(seg, seg.startMin, splitMin, ordinaryHoras, seg.entrada, minutesToTimeLabel(splitMin))
+        emitOrdinary(seg, seg.startMin, splitMin, seg.entrada, minutesToTimeLabel(splitMin))
         emitExtra(seg, splitMin, seg.endMin)
       }
     }
