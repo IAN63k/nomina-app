@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react"
 import { SHIFT_COLOR_BY_CODE } from "@/src/constants/shifts"
 import { ShiftCode } from "@/src/types/schedule"
@@ -64,11 +64,78 @@ function getValue(row: TurnoMedicoRow, key: string): string | number {
   return (row as Record<string, unknown>)[key] as string | number ?? ""
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0")
+
 export function TurnosDetailTable({ rows }: Props) {
   const { getCedulaByName } = useEmpleados()
 
+  // ─── Periodo / quincena ────────────────────────────────────────────────
+  const [periodFrom, setPeriodFrom] = useState("")
+  const [periodTo, setPeriodTo]     = useState("")
+
+  // Mes dominante de las filas. Un turno partido puede derramar 1 día al mes
+  // vecino, así que tomamos el (año-mes) más frecuente como referencia.
+  const monthInfo = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const r of rows) {
+      const ym = (r.fecha ?? "").slice(0, 7)
+      if (ym) counts.set(ym, (counts.get(ym) ?? 0) + 1)
+    }
+    let ym = ""
+    let best = 0
+    for (const [key, n] of counts) {
+      if (n > best) { best = n; ym = key }
+    }
+    const [year, month] = ym ? ym.split("-").map(Number) : [0, 0]
+    const lastDay = ym ? new Date(year, month, 0).getDate() : 31
+    return { ym, year, month, lastDay }
+  }, [rows])
+
+  // Filas dentro del periodo seleccionado (base para la tabla y el TXT).
+  const periodRows = useMemo(() => {
+    if (!periodFrom && !periodTo) return rows
+    return rows.filter((r) => {
+      if (!r.fecha) return false
+      if (periodFrom && r.fecha < periodFrom) return false
+      if (periodTo && r.fecha > periodTo) return false
+      return true
+    })
+  }, [rows, periodFrom, periodTo])
+
+  const q1From = monthInfo.ym ? `${monthInfo.ym}-01` : ""
+  const q1To   = monthInfo.ym ? `${monthInfo.ym}-15` : ""
+  const q2From = monthInfo.ym ? `${monthInfo.ym}-16` : ""
+  const q2To   = monthInfo.ym ? `${monthInfo.ym}-${pad2(monthInfo.lastDay)}` : ""
+  const isQ1 = !!monthInfo.ym && periodFrom === q1From && periodTo === q1To
+  const isQ2 = !!monthInfo.ym && periodFrom === q2From && periodTo === q2To
+
+  const applyQuincena = (half: 1 | 2) => {
+    if (!monthInfo.ym) return
+    setPeriodFrom(half === 1 ? q1From : q2From)
+    setPeriodTo(half === 1 ? q1To : q2To)
+    setPage(1)
+  }
+
+  const clearPeriod = () => {
+    setPeriodFrom("")
+    setPeriodTo("")
+    setPage(1)
+  }
+
+  // Sufijo descriptivo para el nombre del TXT (p. ej. "2026-06_01-15").
+  const periodSuffix = () => {
+    const day = (d: string) => d.slice(8, 10)
+    if (periodFrom && periodTo && periodFrom.slice(0, 7) === periodTo.slice(0, 7)) {
+      return `${periodFrom.slice(0, 7)}_${day(periodFrom)}-${day(periodTo)}`
+    }
+    if (periodFrom && periodTo) return `${periodFrom}_a_${periodTo}`
+    if (periodFrom) return `desde_${periodFrom}`
+    if (periodTo) return `hasta_${periodTo}`
+    return monthInfo.ym || "completo"
+  }
+
   const exportTxt = useCallback(() => {
-    const lines = rows
+    const lines = periodRows
       .filter(r => r.horasrecargo > 0)
       .map(r => {
         const cedula = r.documento
@@ -80,10 +147,11 @@ export function TurnosDetailTable({ rows }: Props) {
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement("a")
     a.href     = url
-    a.download = "recargos.txt"
+    a.download = `recargos_${periodSuffix()}.txt`
     a.click()
     URL.revokeObjectURL(url)
-  }, [rows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodRows, getCedulaByName, periodFrom, periodTo, monthInfo.ym])
 
   const [search, setSearch]               = useState("")
   const [filters, setFilters]             = useState<Record<string, string>>({})
@@ -91,6 +159,18 @@ export function TurnosDetailTable({ rows }: Props) {
   const [pageSize, setPageSize]           = useState(20)
   const [sortCol, setSortCol]             = useState<string>("fecha")
   const [sortDir, setSortDir]             = useState<SortDir>("asc")
+
+  // Al cambiar el mes dominante (otra pestaña de mes), limpiar el periodo
+  // para no dejar la tabla vacía con un rango del mes anterior.
+  const prevYmRef = useRef(monthInfo.ym)
+  useEffect(() => {
+    if (prevYmRef.current !== monthInfo.ym) {
+      prevYmRef.current = monthInfo.ym
+      setPeriodFrom("")
+      setPeriodTo("")
+      setPage(1)
+    }
+  }, [monthInfo.ym])
 
   const handleSort = (col: string) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc")
@@ -104,7 +184,7 @@ export function TurnosDetailTable({ rows }: Props) {
   }
 
   const filtered = useMemo(() => {
-    let res = [...rows]
+    let res = [...periodRows]
 
     if (search.trim()) {
       const q = search.trim().toLowerCase()
@@ -129,7 +209,7 @@ export function TurnosDetailTable({ rows }: Props) {
     })
 
     return res
-  }, [rows, search, filters, sortCol, sortDir])
+  }, [periodRows, search, filters, sortCol, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage   = Math.min(page, totalPages)
@@ -142,6 +222,68 @@ export function TurnosDetailTable({ rows }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Selector de periodo / quincena */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+        <span className="text-xs font-medium text-muted-foreground">Periodo:</span>
+        <button
+          type="button"
+          onClick={() => applyQuincena(1)}
+          disabled={!monthInfo.ym}
+          className={[
+            "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+            isQ1 ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-muted",
+          ].join(" ")}
+        >
+          1ª quincena (1–15)
+        </button>
+        <button
+          type="button"
+          onClick={() => applyQuincena(2)}
+          disabled={!monthInfo.ym}
+          className={[
+            "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+            isQ2 ? "border-foreground bg-foreground text-background" : "border-border bg-background text-foreground hover:bg-muted",
+          ].join(" ")}
+        >
+          2ª quincena (16–{monthInfo.lastDay})
+        </button>
+
+        <span className="mx-1 h-4 w-px bg-border" />
+
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          Desde
+          <input
+            type="date"
+            value={periodFrom}
+            onChange={e => { setPeriodFrom(e.target.value); setPage(1) }}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          Hasta
+          <input
+            type="date"
+            value={periodTo}
+            onChange={e => { setPeriodTo(e.target.value); setPage(1) }}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </label>
+
+        {(periodFrom || periodTo) && (
+          <button
+            type="button"
+            onClick={clearPeriod}
+            className="rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Limpiar
+          </button>
+        )}
+
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+          {periodRows.length} en periodo
+        </span>
+      </div>
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="relative">
