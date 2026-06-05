@@ -113,6 +113,17 @@ export function TurnosDetailTable({ rows }: Props) {
   const isQ1 = !!monthInfo.ym && periodFrom === q1From && periodTo === q1To
   const isQ2 = !!monthInfo.ym && periodFrom === q2From && periodTo === q2To
 
+  // Límites del rango libre: el primer y último día del mes seleccionado, en coherencia
+  // con las quincenas. Así no se pueden elegir fechas fuera del mes que muestra la tabla.
+  const monthStart = q1From
+  const monthEnd   = q2To
+  const clampToMonth = (value: string) => {
+    if (!value || !monthInfo.ym) return value
+    if (value < monthStart) return monthStart
+    if (value > monthEnd) return monthEnd
+    return value
+  }
+
   const applyQuincena = (half: 1 | 2) => {
     if (!monthInfo.ym) return
     setPeriodFrom(half === 1 ? q1From : q2From)
@@ -266,8 +277,11 @@ export function TurnosDetailTable({ rows }: Props) {
           <input
             type="date"
             value={periodFrom}
-            onChange={e => { setPeriodFrom(e.target.value); setPage(1) }}
-            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            min={monthStart || undefined}
+            max={(periodTo || monthEnd) || undefined}
+            disabled={!monthInfo.ym}
+            onChange={e => { setPeriodFrom(clampToMonth(e.target.value)); setPage(1) }}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
         <label className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -275,8 +289,11 @@ export function TurnosDetailTable({ rows }: Props) {
           <input
             type="date"
             value={periodTo}
-            onChange={e => { setPeriodTo(e.target.value); setPage(1) }}
-            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            min={(periodFrom || monthStart) || undefined}
+            max={monthEnd || undefined}
+            disabled={!monthInfo.ym}
+            onChange={e => { setPeriodTo(clampToMonth(e.target.value)); setPage(1) }}
+            className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
 
