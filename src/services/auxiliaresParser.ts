@@ -50,6 +50,14 @@ const serialToMonday = (serial: number): Date | null => {
   return new Date(parsed.y, parsed.m - 1, parsed.d)
 }
 
+// Primer número de día impreso del bloque (fila bajo la cabecera, cols 1,3,5…).
+// Es el "lunes" tal como lo ve el humano y se usa para detectar un serial corrupto.
+const firstDayNumber = (row: unknown[] | undefined): number | null => {
+  if (!row) return null
+  const n = Number(String(row[1] ?? "").trim())
+  return Number.isInteger(n) && n >= 1 && n <= 31 ? n : null
+}
+
 const addDays = (date: Date, days: number) => {
   const next = new Date(date)
   next.setDate(next.getDate() + days)
@@ -107,6 +115,9 @@ const blankRow = (medico: string, date: Date, resolved: { code: string; hours: n
 const parseSheet = (rows: unknown[][]): MonthSchedule[] => {
   const out: TurnoRow[] = []
   let i = 0
+  // Lunes del bloque anterior. Las semanas están apiladas de forma contigua, así que
+  // sirve para detectar y corregir un serial de cabecera corrupto (ver abajo).
+  let prevMonday: Date | null = null
 
   while (i < rows.length) {
     const headerRow = rows[i]
@@ -115,11 +126,28 @@ const parseSheet = (rows: unknown[][]): MonthSchedule[] => {
       continue
     }
 
-    const monday = serialToMonday(headerRow[0] as number)
+    let monday = serialToMonday(headerRow[0] as number)
+
+    // Corrección de serial corrupto: a veces la celda de fecha de la cabecera trae un
+    // serial equivocado (p. ej. apunta al domingo de la semana, no al lunes), lo que
+    // desplazaría todo el bloque a fechas erróneas y dejaría una semana vacía en la
+    // malla. Si el serial no continúa la semana anterior (prevMonday + 7) pero el
+    // número de día IMPRESO en el bloque sí coincide con ese lunes esperado, mandamos
+    // el dato visible: usamos el lunes esperado. (Una semana realmente saltada no
+    // coincidiría con el día impreso, así que no se "corrige" de más.)
+    if (prevMonday) {
+      const expected = addDays(prevMonday, 7)
+      const serialMatchesExpected = !!monday && monday.getTime() === expected.getTime()
+      if (!serialMatchesExpected && firstDayNumber(rows[i + 1]) === expected.getDate()) {
+        monday = expected
+      }
+    }
+
     if (!monday) {
       i += 1
       continue
     }
+    prevMonday = monday
 
     // La fila siguiente a la cabecera es la de "NOMBRE"/números de día → saltarla.
     let j = i + 1
