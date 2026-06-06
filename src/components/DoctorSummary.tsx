@@ -18,6 +18,8 @@ type DoctorSummaryProps = {
   codes?: string[];
   details?: Record<string, ShiftMeta>;
   emptyLabel?: string;
+  /** Colores HEX personalizados por código (prevalecen sobre las clases del catálogo). */
+  colorOf?: (code: string) => { bg: string; text: string; border: string };
 };
 
 export function DoctorSummary({
@@ -29,6 +31,7 @@ export function DoctorSummary({
   codes = SHIFT_CODES,
   details = SHIFT_DETAILS,
   emptyLabel = "No hay médicos para mostrar",
+  colorOf,
 }: DoctorSummaryProps) {
   return (
     <div className="flex flex-col gap-3">
@@ -70,8 +73,13 @@ export function DoctorSummary({
                 const meta = details[code];
                 if (!meta) return null;
                 const count = doctor.shiftsCount[code] ?? 0;
+                const hex = colorOf ? colorOf(code) : null;
                 return (
-                  <div key={code} className={`rounded-lg border px-2 py-2 text-xs font-semibold ${meta.bg} ${meta.text} ${meta.border}`}>
+                  <div
+                    key={code}
+                    className={`rounded-lg border px-2 py-2 text-xs font-semibold ${hex ? "" : `${meta.bg} ${meta.text} ${meta.border}`}`}
+                    style={hex ? { backgroundColor: hex.bg, color: hex.text, borderColor: hex.border } : undefined}
+                  >
                     <div className="font-mono text-sm">{code}</div>
                     <div className="text-[11px] opacity-80">{count}</div>
                   </div>

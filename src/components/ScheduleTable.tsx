@@ -13,6 +13,7 @@ import {
 
 type ShiftDetail = { label: string; bg: string; text: string; border: string; description?: string };
 type ShiftColors = { bg: string; text: string; border: string };
+type ShiftColorHex = { bg: string; text: string; border: string };
 
 type ScheduleTableProps = {
   month?: MonthSchedule;
@@ -23,6 +24,9 @@ type ScheduleTableProps = {
   /** Catálogo de detalles/colores por código. Default: turnos de médicos. */
   shiftDetails?: Record<string, ShiftDetail>;
   shiftColors?: Record<string, ShiftColors>;
+  /** Resuelve colores HEX por código (personalización del usuario). Si se provee,
+   *  prevalece sobre las clases de `shiftColors` y se pinta con estilos inline. */
+  colorOf?: (code: string) => ShiftColorHex;
 };
 
 export function ScheduleTable({
@@ -33,7 +37,11 @@ export function ScheduleTable({
   nameLabel = "Médico",
   shiftDetails = SHIFT_DETAILS,
   shiftColors = SHIFT_COLOR_BY_CODE,
+  colorOf,
 }: ScheduleTableProps) {
+  const hexFor = (code: string): ShiftColorHex | null =>
+    typeof colorOf === "function" && code ? colorOf(code) : null;
+
   if (!month) return null;
   if (!month.days.length || !month.doctors.length) {
     return (
@@ -56,11 +64,12 @@ export function ScheduleTable({
       <div className="flex flex-wrap items-center gap-1.5">
         {availableTurnos.map((code) => {
           const shift = shiftDetails[code];
+          const label = shift?.label || code;
+          const hex = hexFor(code);
           const colors = shift || {
             bg: "bg-slate-200",
             text: "text-slate-900",
             border: "border-slate-300",
-            label: code,
           };
           return (
             <div
@@ -68,11 +77,14 @@ export function ScheduleTable({
               className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-background px-2 py-0.5 text-[11px] text-foreground/70 shadow-sm"
             >
               <span
-                className={`inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${colors.bg} ${colors.text} ${colors.border}`}
+                className={`inline-flex h-4 w-4 items-center justify-center rounded border text-[10px] font-bold ${
+                  hex ? "" : `${colors.bg} ${colors.text} ${colors.border}`
+                }`}
+                style={hex ? { backgroundColor: hex.bg, color: hex.text, borderColor: hex.border } : undefined}
               >
                 {code}
               </span>
-              <span>{colors.label || code}</span>
+              <span>{label}</span>
             </div>
           );
         })}
@@ -189,6 +201,7 @@ export function ScheduleTable({
 
                   const cell = doctor.shifts[day.dayNumber];
                   const cellCode = cell?.code ?? "";
+                  const hex = hexFor(cellCode);
                   const colors = shiftColors[cellCode] || {
                     bg: "bg-transparent",
                     text: "text-foreground/30",
@@ -213,11 +226,14 @@ export function ScheduleTable({
                                 <button
                                   type="button"
                                   disabled={!onShiftChange}
-                                  className={`inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded border font-mono text-xs font-bold transition-all ${colors.bg} ${colors.text} ${colors.border} ${
+                                  className={`inline-flex h-7 min-w-[1.75rem] items-center justify-center rounded border font-mono text-xs font-bold transition-all ${
+                                    hex ? "" : `${colors.bg} ${colors.text} ${colors.border}`
+                                  } ${
                                     onShiftChange
                                       ? "cursor-pointer hover:opacity-90 hover:shadow-sm active:scale-95"
                                       : "cursor-default"
                                   } ${!cellCode ? "border-dashed opacity-30" : ""}`}
+                                  style={hex ? { backgroundColor: hex.bg, color: hex.text, borderColor: hex.border } : undefined}
                                 >
                                   {cell?.code ?? ""}
                                 </button>
@@ -238,9 +254,15 @@ export function ScheduleTable({
                                     {availableTurnos.map((code) => {
                                       const shift = shiftDetails[code];
                                       const label = shift?.label || code;
+                                      const optHex = hexFor(code);
                                       return (
                                         <DropdownMenuRadioItem key={code} value={code}>
-                                          <span className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-bold ${shiftColors[code]?.bg ?? ""} ${shiftColors[code]?.text ?? ""}`}>
+                                          <span
+                                            className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded border text-[10px] font-bold ${
+                                              optHex ? "" : `${shiftColors[code]?.bg ?? ""} ${shiftColors[code]?.text ?? ""}`
+                                            }`}
+                                            style={optHex ? { backgroundColor: optHex.bg, color: optHex.text, borderColor: optHex.border } : undefined}
+                                          >
                                             {code}
                                           </span>
                                           {label}
