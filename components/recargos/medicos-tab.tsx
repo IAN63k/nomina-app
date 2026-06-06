@@ -1,9 +1,10 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Stethoscope } from "lucide-react"
+import { ChevronDown, Stethoscope } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { DoctorSummary } from "@/src/components/DoctorSummary"
 import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
@@ -13,11 +14,14 @@ import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useEmpleados } from "@/contexts/empleados-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
+import { useAppearance } from "@/contexts/appearance-context"
 import { computeDisplayRows, fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
 
 export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
+  const { colorOf } = useAppearance()
+  const [mallaOpen, setMallaOpen] = useState(false)
   const [dbLoading, setDbLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [saveSuggestionVisible, setSaveSuggestionVisible] = useState(false)
@@ -207,13 +211,45 @@ export function RecargosMedicosTab() {
               </button>
             </div>
 
-            <ScheduleTable month={activeMonth} onShiftChange={updateShift} timeRangeByCode={timeRangeByCode} availableTurnos={turnosCodes} />
+            {/* Malla de turnos (colapsable, oculta por defecto) */}
+            <Collapsible
+              open={mallaOpen}
+              onOpenChange={setMallaOpen}
+              className="rounded-2xl border border-border bg-card shadow-sm"
+            >
+              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Malla de turnos</p>
+                  <p className="text-sm text-foreground/70">{mallaOpen ? "Editar turnos del mes" : "Mostrar para ver y editar turnos"}</p>
+                </div>
+                <ChevronDown className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${mallaOpen ? "rotate-180" : ""}`} />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="px-4 pb-4">
+                <ScheduleTable
+                  month={activeMonth}
+                  onShiftChange={updateShift}
+                  timeRangeByCode={timeRangeByCode}
+                  availableTurnos={turnosCodes}
+                  colorOf={(code) => colorOf("medicos", code)}
+                />
+              </CollapsibleContent>
+            </Collapsible>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            {/* Detalle del mes — tabla principal */}
+            <div className="rounded-2xl border-2 border-primary/20 bg-card p-5 shadow-md">
+              <div className="mb-4">
+                <h2 className="text-lg font-bold tracking-tight text-foreground">Detalle del mes</h2>
+                <p className="text-sm text-muted-foreground">Registro completo de turnos y recargos</p>
+              </div>
+              <TurnosDetailTable rows={activeMonthRowsWithCedula} module="medicos" />
+            </div>
+
+            {/* Resumen */}
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Resumen</p>
-                  <p className="text-sm text-slate-700">Horas totales y conteo de turnos</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Resumen</p>
+                  <p className="text-sm text-foreground/70">Horas totales y conteo de turnos</p>
                 </div>
               </div>
               <DoctorSummary
@@ -222,15 +258,8 @@ export function RecargosMedicosTab() {
                 sortDirection={sortDirection}
                 onSearch={setSearch}
                 onToggleSort={toggleSortDirection}
+                colorOf={(code) => colorOf("medicos", code)}
               />
-            </div>
-
-            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
-              <div className="mb-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Detalle del mes</p>
-                <p className="text-sm text-foreground/70">Registro completo de turnos y recargos</p>
-              </div>
-              <TurnosDetailTable rows={activeMonthRowsWithCedula} />
             </div>
           </>
         ) : null}

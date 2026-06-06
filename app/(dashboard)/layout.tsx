@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/breadcrumb";
 import { Separator } from "@/components/ui/separator";
 import { SettingsSidebar } from "@/components/settings-sidebar";
+import { AppearanceTrigger } from "@/components/appearance-trigger";
 import {
   SidebarInset,
   SidebarProvider,
@@ -67,7 +68,8 @@ export default function DashboardLayout({
                   </BreadcrumbList>
                 </Breadcrumb>
               </div>
-              <div className="ml-auto px-4">
+              <div className="ml-auto flex items-center gap-1 px-4">
+                <AppearanceTrigger />
                 <SettingsSidebar />
               </div>
             </header>
