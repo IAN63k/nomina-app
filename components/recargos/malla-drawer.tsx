@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ChevronLeft, ChevronRight, X } from "lucide-react"
 
 import { ScheduleTable } from "@/src/components/ScheduleTable"
@@ -27,21 +27,36 @@ type MallaDrawerProps = {
  */
 export function MallaDrawer(props: MallaDrawerProps) {
   const [open, setOpen] = useState(false)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const tabRef = useRef<HTMLButtonElement>(null)
 
-  // Cerrar con Escape.
+  // Cerrar con Escape o al hacer clic fuera del panel (y de la pestaña).
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false)
     }
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node
+      if (panelRef.current?.contains(target) || tabRef.current?.contains(target)) return
+      // Ignorar clics dentro de portales de Radix (dropdown de turnos, tooltips),
+      // que se renderizan fuera del panel pero son parte de la malla.
+      if (target instanceof Element && target.closest("[data-radix-popper-content-wrapper]")) return
+      setOpen(false)
+    }
     window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    document.addEventListener("pointerdown", onPointerDown)
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      document.removeEventListener("pointerdown", onPointerDown)
+    }
   }, [open])
 
   return (
     <>
       {/* Pestaña en el borde derecho: abre/oculta la malla */}
       <button
+        ref={tabRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
@@ -54,6 +69,7 @@ export function MallaDrawer(props: MallaDrawerProps) {
 
       {/* Panel deslizable fijo */}
       <div
+        ref={panelRef}
         id="malla-drawer-panel"
         role="dialog"
         aria-label="Malla de turnos"
