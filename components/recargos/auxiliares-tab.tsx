@@ -8,6 +8,7 @@ import { DoctorSummary } from "@/src/components/DoctorSummary"
 import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
 import { MallaDrawer } from "@/components/recargos/malla-drawer"
+import { CargaHorarios } from "@/components/recargos/carga-horarios"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useAuxiliaresTurnos } from "@/contexts/auxiliares-turnos-context"
@@ -163,6 +164,7 @@ export function RecargosAuxiliaresTab() {
       </div>
 
       <div className="flex flex-col gap-4">
+        <CargaHorarios defaultOpen={months.length === 0}>
         <FileUpload onFile={handleFileWithSaveSuggestion} loading={loading} error={error} />
 
         <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
@@ -197,6 +199,7 @@ export function RecargosAuxiliaresTab() {
             </div>
           ) : null}
         </div>
+        </CargaHorarios>
 
         {months.length > 0 ? (
           <>
