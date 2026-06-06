@@ -1,14 +1,13 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronDown, Stethoscope } from "lucide-react"
+import { Stethoscope } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { DoctorSummary } from "@/src/components/DoctorSummary"
 import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
-import { ScheduleTable } from "@/src/components/ScheduleTable"
+import { MallaDrawer } from "@/components/recargos/malla-drawer"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
@@ -21,7 +20,6 @@ export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const { colorOf } = useAppearance()
-  const [mallaOpen, setMallaOpen] = useState(false)
   const [dbLoading, setDbLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [saveSuggestionVisible, setSaveSuggestionVisible] = useState(false)
@@ -211,30 +209,6 @@ export function RecargosMedicosTab() {
               </button>
             </div>
 
-            {/* Malla de turnos (colapsable, oculta por defecto) */}
-            <Collapsible
-              open={mallaOpen}
-              onOpenChange={setMallaOpen}
-              className="rounded-2xl border border-border bg-card shadow-sm"
-            >
-              <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-muted-foreground">Malla de turnos</p>
-                  <p className="text-sm text-foreground/70">{mallaOpen ? "Editar turnos del mes" : "Mostrar para ver y editar turnos"}</p>
-                </div>
-                <ChevronDown className={`h-5 w-5 shrink-0 text-muted-foreground transition-transform ${mallaOpen ? "rotate-180" : ""}`} />
-              </CollapsibleTrigger>
-              <CollapsibleContent className="px-4 pb-4">
-                <ScheduleTable
-                  month={activeMonth}
-                  onShiftChange={updateShift}
-                  timeRangeByCode={timeRangeByCode}
-                  availableTurnos={turnosCodes}
-                  colorOf={(code) => colorOf("medicos", code)}
-                />
-              </CollapsibleContent>
-            </Collapsible>
-
             {/* Detalle del mes — tabla principal */}
             <div className="rounded-2xl border-2 border-primary/20 bg-card p-5 shadow-md">
               <div className="mb-4">
@@ -261,6 +235,15 @@ export function RecargosMedicosTab() {
                 colorOf={(code) => colorOf("medicos", code)}
               />
             </div>
+
+            {/* Malla de turnos — panel lateral fijo */}
+            <MallaDrawer
+              month={activeMonth}
+              onShiftChange={updateShift}
+              timeRangeByCode={timeRangeByCode}
+              availableTurnos={turnosCodes}
+              colorOf={(code) => colorOf("medicos", code)}
+            />
           </>
         ) : null}
       </div>
