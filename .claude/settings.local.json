@@ -10,7 +10,10 @@
       "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && mv \"app/\\(dashboard\\)/horas-extras\" \"app/\\(dashboard\\)/recargos\" && mv \"components/horas-extras\" \"components/recargos\")",
       "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && npm run build 2>&1 | tail -18)",
       "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && npm run build 2>&1 | grep -E \"error|Error|warning|✓|Route\" | head -30)",
-      "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && npm run build 2>&1 | grep -A5 \"Property 'name'\")"
+      "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && npm run build 2>&1 | grep -A5 \"Property 'name'\")",
+      "Read(//tmp/**)",
+      "Bash(python3 -)",
+      "Bash(git fetch *)"
     ]
   }
 }
