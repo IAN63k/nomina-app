@@ -2,14 +2,16 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react"
-import { SHIFT_COLOR_BY_CODE } from "@/src/constants/shifts"
-import { ShiftCode } from "@/src/types/schedule"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
+import type { ShiftModule } from "@/src/constants/shiftColors"
 import { useEmpleados } from "@/contexts/empleados-context"
+import { useAppearance } from "@/contexts/appearance-context"
 
 
 type Props = {
   rows: TurnoMedicoRow[]
+  /** Módulo de origen, para resolver el color personalizado del turno. */
+  module?: ShiftModule
 }
 
 type SortDir = "asc" | "desc"
@@ -70,8 +72,9 @@ function getValue(row: TurnoMedicoRow, key: string): string | number {
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
 
-export function TurnosDetailTable({ rows }: Props) {
+export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
   const { getCedulaByName } = useEmpleados()
+  const { colorOf } = useAppearance()
 
   // ─── Periodo / quincena ────────────────────────────────────────────────
   const [periodFrom, setPeriodFrom] = useState("")
@@ -399,9 +402,7 @@ export function TurnosDetailTable({ rows }: Props) {
                 </td>
               </tr>
             ) : paged.map((row, i) => {
-              const shiftColors = SHIFT_COLOR_BY_CODE[row.turno_codigo as ShiftCode] ?? {
-                bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300",
-              }
+              const shiftColors = row.turno_codigo ? colorOf(module, row.turno_codigo) : null
               const horario = row.entrada && row.salida ? `${row.entrada} – ${row.salida}` : "—"
               const conceptoLabel = CONCEPTO_LABELS[row.concepto] ?? String(row.concepto)
               const diaLabel = row.festivo ? "Festivo" : (DIA_LABELS[row.dia] ?? row.dia)
@@ -426,8 +427,11 @@ export function TurnosDetailTable({ rows }: Props) {
                   </td>
                   {/* Dig. Turno */}
                   <td className="border-b border-border/50 px-3 py-2 text-center">
-                    {row.turno_codigo ? (
-                      <span className={`inline-flex h-6 w-6 items-center justify-center rounded border font-mono text-[11px] font-bold ${shiftColors.bg} ${shiftColors.text} ${shiftColors.border}`}>
+                    {row.turno_codigo && shiftColors ? (
+                      <span
+                        className="inline-flex h-6 w-6 items-center justify-center rounded border font-mono text-[11px] font-bold"
+                        style={{ backgroundColor: shiftColors.bg, color: shiftColors.text, borderColor: shiftColors.border }}
+                      >
                         {row.turno_codigo}
                       </span>
                     ) : <span className="text-muted-foreground/30">—</span>}

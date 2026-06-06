@@ -44,7 +44,7 @@ export default function Recargos() {
                         </div>
                         <h1 className="text-2xl font-bold tracking-tight">Gestión de Recargos</h1>
                         <p className="mt-2 text-muted-foreground">
-                            En construcción. Pronto podrás cargar tus archivos de recargos, visualizarlos y exportarlos en diferentes formatos.
+                            Carga tus archivos de turnos, revisa el detalle de recargos y horas extra, y expórtalos.
                         </p>
                     </div>
                     <div className="inline-flex items-center gap-2 rounded-lg bg-muted p-1">
