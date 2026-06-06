@@ -30,6 +30,21 @@ export function MallaDrawer(props: MallaDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const tabRef = useRef<HTMLButtonElement>(null)
 
+  // Atajo de teclado: tecla "M" para mostrar/ocultar la malla (sin modificadores y
+  // siempre que no se esté escribiendo en un campo de texto).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "m" || e.ctrlKey || e.metaKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      const tag = el?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable) return
+      e.preventDefault()
+      setOpen((v) => !v)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   // Cerrar con Escape o al hacer clic fuera del panel (y de la pestaña).
   useEffect(() => {
     if (!open) return
@@ -61,10 +76,13 @@ export function MallaDrawer(props: MallaDrawerProps) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-controls="malla-drawer-panel"
-        className="fixed right-0 top-1/2 z-50 flex -translate-y-1/2 items-center gap-1 rounded-l-lg border border-r-0 border-border bg-primary py-4 pl-1.5 pr-1 text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
+        aria-keyshortcuts="M"
+        title={`${open ? "Ocultar" : "Mostrar"} malla de turnos (M)`}
+        className="fixed right-0 top-1/2 z-50 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-l-lg border border-r-0 border-border bg-primary px-1 py-3 text-primary-foreground shadow-lg transition-colors hover:bg-primary/90"
       >
         {open ? <ChevronRight className="h-4 w-4 shrink-0" /> : <ChevronLeft className="h-4 w-4 shrink-0" />}
         <span className="text-xs font-semibold [writing-mode:vertical-rl]">Malla de turnos</span>
+        <kbd className="rounded border border-primary-foreground/40 px-1 text-[10px] font-bold leading-tight">M</kbd>
       </button>
 
       {/* Panel deslizable fijo */}
