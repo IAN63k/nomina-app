@@ -13,7 +13,9 @@
       "Bash(cd \"D:\\\\User\\\\Escritorio\\\\proyectos\\\\nomina-app\" && npm run build 2>&1 | grep -A5 \"Property 'name'\")",
       "Read(//tmp/**)",
       "Bash(python3 -)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(gh auth *)",
+      "Bash(node -p \"Object.keys\\(require\\('./package.json'\\).dependencies\\).filter\\(d=>d.includes\\('dropdown'\\)||d.includes\\('radix'\\)\\).join\\('\\\\n'\\)\")"
     ]
   }
 }
