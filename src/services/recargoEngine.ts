@@ -40,6 +40,13 @@ export type TurnoRow = {
   medico: string
   documento: number | null
   fecha: string
+  /**
+   * Fecha del DÍA DE INICIO del turno. Coincide con `fecha` salvo en el segmento
+   * post-medianoche de un turno partido, que se fecha al día siguiente (`fecha`) pero
+   * pertenece, para efectos de período/quincena, al día en que empezó el turno. El
+   * filtro de período imputa por esta fecha para no perder el cruce a fin de mes.
+   */
+  fechaInicio: string
   turno_codigo: string
   entrada: string | null
   salida: string | null
@@ -287,9 +294,13 @@ const addRowAggregated = (
   row: TurnoRow,
   splitByTimeRange = false
 ) => {
+  // El guardado agrupa por (medico, fechaInicio, concepto): un turno nocturno partido
+  // por medianoche comparte fechaInicio, así su cuerpo y su cola se funden en UNA fila
+  // del día de inicio, sin colisionar con el turno del día siguiente (que tiene otro
+  // fechaInicio). Esto evita la corrupción de códigos al recargar (libres/N2 → N1).
   const key = splitByTimeRange
     ? `${row.medico}|${row.fecha}|${row.concepto}|${row.entrada ?? ""}|${row.salida ?? ""}`
-    : `${row.medico}|${row.fecha}|${row.concepto}`
+    : `${row.medico}|${row.fechaInicio}|${row.concepto}`
   const existing = rowsByKey.get(key)
   if (!existing) {
     rowsByKey.set(key, row)
@@ -381,6 +392,7 @@ type Segment = {
   turno_codigo: string
   date: Date
   fecha: string
+  fechaInicio: string // fecha del día de inicio del turno (= fecha salvo en el segmento post-medianoche)
   weekKey: string // semana (lunes) del DÍA DE INICIO del turno, para el tope semanal
   effectiveDia: DiaBD // domingo o festivo → "D"; alimenta recargo, extras y la columna Día
   festivo: boolean // marca de festivo de la FILA (calendario o /DF en la fecha física)
@@ -445,6 +457,7 @@ const baseRow = (seg: Segment, concepto: number, override: Partial<TurnoRow>): T
   medico: seg.medico,
   documento: seg.documento,
   fecha: seg.fecha,
+  fechaInicio: seg.fechaInicio,
   turno_codigo: seg.turno_codigo,
   entrada: seg.entrada,
   salida: seg.salida,
@@ -528,6 +541,9 @@ export const buildTurnoRows = (
             turno_codigo: code,
             date: segDate,
             fecha: toDateOnly(segDate),
+            // El segmento post-medianoche se fecha al día siguiente (`segDate`), pero para
+            // período/quincena pertenece al día en que INICIÓ el turno (`date`).
+            fechaInicio: toDateOnly(date),
             // El turno pertenece a la semana de su día de INICIO (`date`), aunque su
             // segmento post-medianoche caiga en el lunes de la semana siguiente.
             weekKey: mondayKey(date),
@@ -724,12 +740,51 @@ export const buildTurnoRows = (
 /**
  * Reconstruye `MonthSchedule[]` a partir de filas planas (típicamente leídas de BD).
  * `normalizeCode` valida/normaliza el código de turno según el catálogo del módulo.
+ *
+ * `hoursByCode` (opcional): si se provee, las horas de cada celda se toman del catálogo
+ * según su código en vez de sumar las horas de las filas de recargo. Es necesario en la
+ * carga desde BD porque un turno nocturno se persiste partido por medianoche y la suma
+ * de tramos daría el span de reloj (p. ej. 9h) en vez de las horas oficiales (N1 = 8h).
  */
 export const buildMonthsFromRows = (
   rows: TurnoRow[],
-  normalizeCode: (value: string) => string
+  normalizeCode: (value: string) => string,
+  hoursByCode?: Record<string, number>
 ): MonthSchedule[] => {
   if (!rows.length) return []
+
+  // Cada turno se reconstruye en su DÍA DE INICIO (`fechaInicio`). Un turno nocturno
+  // partido por medianoche se guardó en dos fechas físicas pero comparte fechaInicio,
+  // de modo que sus filas se imputan al día en que EMPEZÓ y no contaminan el día
+  // siguiente (libre u otro turno) —origen del bug (libres → N1, N2 → N1, M1 → N1).
+  // (Filas antiguas sin fechaInicio caen de vuelta en `fecha`.)
+  type Cell = { date: Date; code: string; hours: number; festivo: boolean }
+  const cellsByMedico = new Map<string, Map<string, Cell>>()
+
+  for (const row of rows) {
+    const name = (row.medico ?? "").trim()
+    if (!name) continue
+    const startStr = row.fechaInicio || row.fecha
+    const date = new Date(`${startStr}T00:00:00`)
+    if (Number.isNaN(date.getTime())) continue
+
+    let byDate = cellsByMedico.get(name)
+    if (!byDate) {
+      byDate = new Map<string, Cell>()
+      cellsByMedico.set(name, byDate)
+    }
+    const key = toDateOnly(date)
+    let cell = byDate.get(key)
+    if (!cell) {
+      cell = { date, code: "", hours: 0, festivo: false }
+      byDate.set(key, cell)
+    }
+
+    const code = normalizeCode(row.turno_codigo)
+    if (code) cell.code = code
+    cell.hours = Number((cell.hours + (Number(row.horas) || 0)).toFixed(2))
+    if (row.festivo) cell.festivo = true
+  }
 
   const grouped = new Map<
     string,
@@ -740,52 +795,44 @@ export const buildMonthsFromRows = (
     }
   >()
 
-  for (const row of rows) {
-    const date = new Date(`${row.fecha}T00:00:00`)
-    if (Number.isNaN(date.getTime())) continue
+  for (const [name, byDate] of cellsByMedico) {
+    for (const cell of byDate.values()) {
+      const date = cell.date
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
 
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+      let group = grouped.get(monthKey)
+      if (!group) {
+        group = { date, daysByNumber: new Map<number, DayHeader>(), doctorsByName: new Map<string, DoctorSchedule>() }
+        grouped.set(monthKey, group)
+      }
 
-    if (!grouped.has(monthKey)) {
-      grouped.set(monthKey, {
-        date,
-        daysByNumber: new Map<number, DayHeader>(),
-        doctorsByName: new Map<string, DoctorSchedule>(),
-      })
-    }
+      const diaNumero = date.getDate()
+      if (!group.daysByNumber.has(diaNumero)) {
+        const dayOfWeek = date.getDay()
+        group.daysByNumber.set(diaNumero, {
+          dayNumber: diaNumero,
+          dayLabel: DAY_LABELS[dayOfWeek],
+          isSunday: dayOfWeek === 0,
+          isWeeklyTotal: false,
+        })
+      }
 
-    const group = grouped.get(monthKey)
-    if (!group) continue
+      let doctor = group.doctorsByName.get(name)
+      if (!doctor) {
+        doctor = { name, shifts: {}, weeklyTotals: [], monthTotal: 0 }
+        group.doctorsByName.set(name, doctor)
+      }
 
-    if (!group.daysByNumber.has(row.dia_numero)) {
-      const dayOfWeek = date.getDay()
-      group.daysByNumber.set(row.dia_numero, {
-        dayNumber: row.dia_numero,
-        dayLabel: DAY_LABELS[dayOfWeek],
-        isSunday: dayOfWeek === 0,
-        isWeeklyTotal: false,
-      })
-    }
-
-    const name = (row.medico ?? "").trim()
-    if (!name) continue
-
-    if (!group.doctorsByName.has(name)) {
-      group.doctorsByName.set(name, {
-        name,
-        shifts: {},
-        weeklyTotals: [],
-        monthTotal: 0,
-      })
-    }
-
-    const doctor = group.doctorsByName.get(name)
-    if (!doctor) continue
-
-    doctor.shifts[row.dia_numero] = {
-      code: normalizeCode(row.turno_codigo),
-      hours: Number(row.horas) || 0,
-      festivo: row.festivo || undefined,
+      // Horas oficiales del catálogo cuando esté disponible (evita el span de reloj
+      // inflado de las noches partidas por medianoche). Solo para turnos con horario
+      // (catálogo > 0): las AUSENCIAS (INCAP/INCP… catálogo 0) conservan las horas
+      // acumuladas del Excel, que pueden ser > 0 y no deben resetearse.
+      const catalogHours = hoursByCode && cell.code ? hoursByCode[cell.code] : undefined
+      doctor.shifts[diaNumero] = {
+        code: cell.code,
+        hours: catalogHours && catalogHours > 0 ? catalogHours : cell.hours,
+        festivo: cell.festivo || undefined,
+      }
     }
   }
 

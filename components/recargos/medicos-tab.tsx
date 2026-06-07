@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Stethoscope } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -89,6 +89,11 @@ export function RecargosMedicosTab() {
   // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
   const period = usePeriodFilter(activeMonthRowsWithCedula)
 
+  // La carga desde BD corre una sola vez al montar; leemos el catálogo de horas vía ref
+  // para reconstruir con horas oficiales sin re-disparar el fetch al cambiar la config.
+  const hoursByCodeRef = useRef(hoursByCode)
+  hoursByCodeRef.current = hoursByCode
+
   useEffect(() => {
     let isMounted = true
 
@@ -104,7 +109,7 @@ export function RecargosMedicosTab() {
           return
         }
 
-        const mappedMonths = mapDbRowsToMonths(rows)
+        const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current)
         if (mappedMonths.length) {
           setMonthsData(mappedMonths)
           setDbMessage(`Se cargaron ${rows.length} registros guardados en la base de datos.`)

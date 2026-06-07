@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -95,6 +95,12 @@ export function RecargosAuxiliaresTab() {
   // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
   const period = usePeriodFilter(activeMonthRowsWithCedula)
 
+  // La carga desde BD corre una sola vez al montar; leemos el catálogo de horas vía ref
+  // para reconstruir con horas oficiales sin re-disparar el fetch (que pisaría datos
+  // subidos sin guardar) cada vez que cambie la configuración de turnos.
+  const hoursByCodeRef = useRef(hoursByCode)
+  hoursByCodeRef.current = hoursByCode
+
   useEffect(() => {
     let isMounted = true
 
@@ -110,7 +116,7 @@ export function RecargosAuxiliaresTab() {
           return
         }
 
-        const mappedMonths = mapDbRowsToAuxMonths(rows)
+        const mappedMonths = mapDbRowsToAuxMonths(rows, hoursByCodeRef.current)
         if (mappedMonths.length) {
           setMonthsData(mappedMonths)
           setDbMessage(`Se cargaron ${rows.length} registros guardados en la base de datos.`)
