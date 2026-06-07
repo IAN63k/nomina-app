@@ -10,7 +10,9 @@ import { MonthTabs } from "@/src/components/MonthTabs"
 import { MallaDrawer } from "@/components/recargos/malla-drawer"
 import { CargaHorarios } from "@/components/recargos/carga-horarios"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
+import { ExportMenu } from "@/src/components/ExportMenu"
 import { useSchedule } from "@/src/hooks/useSchedule"
+import { usePeriodFilter } from "@/src/hooks/usePeriodFilter"
 import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useEmpleados } from "@/contexts/empleados-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
@@ -41,7 +43,6 @@ export function RecargosMedicosTab() {
     setSearch,
     toggleSortDirection,
     updateShift,
-    exportCsv,
     setMonthsData,
   } = useSchedule({ hoursByCode })
 
@@ -50,7 +51,7 @@ export function RecargosMedicosTab() {
       months.reduce(
         (total, month) =>
           total +
-          month.doctors.reduce((doctorTotal, doctor) => {
+          month.doctors.reduce((doctorTotal) => {
             const daysCount = month.days.filter((day) => !day.isWeeklyTotal).length
             return doctorTotal + daysCount
           }, 0),
@@ -84,6 +85,9 @@ export function RecargosMedicosTab() {
       }
     })
   }, [activeMonthRows, getCedulaByName])
+
+  // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
+  const period = usePeriodFilter(activeMonthRowsWithCedula)
 
   useEffect(() => {
     let isMounted = true
@@ -203,13 +207,7 @@ export function RecargosMedicosTab() {
                 activeIndex={activeMonthIndex}
                 onSelect={setActiveMonthIndex}
               />
-              <button
-                type="button"
-                onClick={exportCsv}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5"
-              >
-                Exportar CSV
-              </button>
+              <ExportMenu period={period} />
             </div>
 
             {/* Detalle del mes — tabla principal */}
@@ -218,7 +216,7 @@ export function RecargosMedicosTab() {
                 <h2 className="text-lg font-bold tracking-tight text-foreground">Detalle del mes</h2>
                 <p className="text-sm text-muted-foreground">Registro completo de turnos y recargos</p>
               </div>
-              <TurnosDetailTable rows={activeMonthRowsWithCedula} module="medicos" />
+              <TurnosDetailTable period={period} module="medicos" />
             </div>
 
             {/* Resumen */}
