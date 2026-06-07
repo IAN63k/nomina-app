@@ -60,6 +60,9 @@ export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
     medico: r.medico,
     documento: r.documento,
     fecha: r.fecha,
+    // Día de inicio del turno (eje de agregación/reconstrucción; difiere de `fecha` en
+    // el tramo post-medianoche de una noche partida).
+    fecha_inicio: r.fechaInicio,
     turno_codigo: r.turno_codigo,
     entrada: r.entrada,
     salida: r.salida,
@@ -75,7 +78,7 @@ export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase
     .from("turnos_medicos")
-    .upsert(payload, { onConflict: "medico,fecha,concepto" })
+    .upsert(payload, { onConflict: "medico,fecha_inicio,concepto" })
 
   if (error) {
     throw new Error(error.message)
@@ -95,7 +98,7 @@ export async function fetchTurnosMedicos() {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("turnos_medicos")
-      .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, created_at")
+      .select("medico, documento, fecha, fecha_inicio, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, created_at")
       .order("fecha", { ascending: true })
       .order("medico", { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
@@ -104,7 +107,12 @@ export async function fetchTurnosMedicos() {
       throw new Error(error.message)
     }
 
-    const page = (data ?? []) as TurnoMedicoRow[]
+    // Mapear `fecha_inicio` (snake) → `fechaInicio` (modelo). Filas previas a la
+    // migración no la tienen → fallback a `fecha` en la reconstrucción.
+    const page = (data ?? []).map((r) => {
+      const row = r as TurnoMedicoRow & { fecha_inicio?: string }
+      return { ...row, fechaInicio: row.fecha_inicio ?? row.fecha } as TurnoMedicoRow
+    })
     all.push(...page)
     if (page.length < PAGE_SIZE) break
   }
@@ -112,5 +120,7 @@ export async function fetchTurnosMedicos() {
   return all
 }
 
-export const mapDbRowsToMonths = (rows: TurnoMedicoRow[]): MonthSchedule[] =>
-  buildMonthsFromRows(rows, normalizeShiftCode)
+export const mapDbRowsToMonths = (
+  rows: TurnoMedicoRow[],
+  hoursByCode?: Record<string, number>
+): MonthSchedule[] => buildMonthsFromRows(rows, normalizeShiftCode, hoursByCode)
