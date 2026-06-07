@@ -90,17 +90,30 @@ export async function upsertTurnosAuxiliares(rows: TurnoAuxiliarRow[]) {
 export async function fetchTurnosAuxiliares() {
   const supabase = getSupabaseBrowserClient()
 
-  const { data, error } = await supabase
-    .from("turnos_auxiliares")
-    .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, festivo, created_at")
-    .order("fecha", { ascending: true })
-    .order("medico", { ascending: true })
+  // Supabase limita por defecto a 1000 filas por respuesta. Paginamos con `.range`
+  // hasta agotar los datos para no perder los meses más recientes (las filas excedentes
+  // se descartaban silenciosamente y sus pestañas no aparecían al recargar).
+  const PAGE_SIZE = 1000
+  const all: TurnoAuxiliarRow[] = []
 
-  if (error) {
-    throw new Error(error.message)
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("turnos_auxiliares")
+      .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, festivo, created_at")
+      .order("fecha", { ascending: true })
+      .order("medico", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const page = (data ?? []) as TurnoAuxiliarRow[]
+    all.push(...page)
+    if (page.length < PAGE_SIZE) break
   }
 
-  return (data ?? []) as TurnoAuxiliarRow[]
+  return all
 }
 
 export const mapDbRowsToAuxMonths = (rows: TurnoAuxiliarRow[]): MonthSchedule[] =>
