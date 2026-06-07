@@ -62,6 +62,9 @@ export async function upsertTurnosAuxiliares(rows: TurnoAuxiliarRow[]) {
     medico: r.medico,
     documento: r.documento,
     fecha: r.fecha,
+    // Día de inicio del turno: en una noche partida por medianoche difiere de `fecha`
+    // (que es la fecha física del tramo). Es el eje de agregación/reconstrucción.
+    fecha_inicio: r.fechaInicio,
     turno_codigo: r.turno_codigo,
     entrada: r.entrada,
     salida: r.salida,
@@ -78,7 +81,7 @@ export async function upsertTurnosAuxiliares(rows: TurnoAuxiliarRow[]) {
   const supabase = getSupabaseBrowserClient()
   const { error } = await supabase
     .from("turnos_auxiliares")
-    .upsert(payload, { onConflict: "medico,fecha,concepto" })
+    .upsert(payload, { onConflict: "medico,fecha_inicio,concepto" })
 
   if (error) {
     throw new Error(error.message)
@@ -99,7 +102,7 @@ export async function fetchTurnosAuxiliares() {
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("turnos_auxiliares")
-      .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, festivo, created_at")
+      .select("medico, documento, fecha, fecha_inicio, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, festivo, created_at")
       .order("fecha", { ascending: true })
       .order("medico", { ascending: true })
       .range(from, from + PAGE_SIZE - 1)
@@ -108,7 +111,12 @@ export async function fetchTurnosAuxiliares() {
       throw new Error(error.message)
     }
 
-    const page = (data ?? []) as TurnoAuxiliarRow[]
+    // Mapear la columna snake_case `fecha_inicio` al campo `fechaInicio` del modelo.
+    // (Filas previas a la migración no la tienen → fallback a `fecha` en la reconstrucción.)
+    const page = (data ?? []).map((r) => {
+      const row = r as TurnoAuxiliarRow & { fecha_inicio?: string }
+      return { ...row, fechaInicio: row.fecha_inicio ?? row.fecha } as TurnoAuxiliarRow
+    })
     all.push(...page)
     if (page.length < PAGE_SIZE) break
   }
@@ -116,5 +124,7 @@ export async function fetchTurnosAuxiliares() {
   return all
 }
 
-export const mapDbRowsToAuxMonths = (rows: TurnoAuxiliarRow[]): MonthSchedule[] =>
-  buildMonthsFromRows(rows, normalizeAuxCode)
+export const mapDbRowsToAuxMonths = (
+  rows: TurnoAuxiliarRow[],
+  hoursByCode?: Record<string, number>
+): MonthSchedule[] => buildMonthsFromRows(rows, normalizeAuxCode, hoursByCode)
