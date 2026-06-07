@@ -164,7 +164,7 @@ export function RecargosAuxiliaresTab() {
       </div>
 
       <div className="flex flex-col gap-4">
-        <CargaHorarios defaultOpen={months.length === 0}>
+        <CargaHorarios defaultOpen={false}>
         <FileUpload onFile={handleFileWithSaveSuggestion} loading={loading} error={error} />
 
         <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">

@@ -87,17 +87,29 @@ export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
 export async function fetchTurnosMedicos() {
   const supabase = getSupabaseBrowserClient()
 
-  const { data, error } = await supabase
-    .from("turnos_medicos")
-    .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, created_at")
-    .order("fecha", { ascending: true })
-    .order("medico", { ascending: true })
+  // Supabase limita por defecto a 1000 filas por respuesta. Paginamos con `.range`
+  // hasta agotar los datos para no perder los meses más recientes.
+  const PAGE_SIZE = 1000
+  const all: TurnoMedicoRow[] = []
 
-  if (error) {
-    throw new Error(error.message)
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("turnos_medicos")
+      .select("medico, documento, fecha, turno_codigo, entrada, salida, concepto, horas, horasrecargo, diferencia, dia, mes, dia_numero, created_at")
+      .order("fecha", { ascending: true })
+      .order("medico", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) {
+      throw new Error(error.message)
+    }
+
+    const page = (data ?? []) as TurnoMedicoRow[]
+    all.push(...page)
+    if (page.length < PAGE_SIZE) break
   }
 
-  return (data ?? []) as TurnoMedicoRow[]
+  return all
 }
 
 export const mapDbRowsToMonths = (rows: TurnoMedicoRow[]): MonthSchedule[] =>
