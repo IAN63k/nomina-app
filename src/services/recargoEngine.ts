@@ -40,6 +40,13 @@ export type TurnoRow = {
   medico: string
   documento: number | null
   fecha: string
+  /**
+   * Fecha del DÍA DE INICIO del turno. Coincide con `fecha` salvo en el segmento
+   * post-medianoche de un turno partido, que se fecha al día siguiente (`fecha`) pero
+   * pertenece, para efectos de período/quincena, al día en que empezó el turno. El
+   * filtro de período imputa por esta fecha para no perder el cruce a fin de mes.
+   */
+  fechaInicio: string
   turno_codigo: string
   entrada: string | null
   salida: string | null
@@ -381,6 +388,7 @@ type Segment = {
   turno_codigo: string
   date: Date
   fecha: string
+  fechaInicio: string // fecha del día de inicio del turno (= fecha salvo en el segmento post-medianoche)
   weekKey: string // semana (lunes) del DÍA DE INICIO del turno, para el tope semanal
   effectiveDia: DiaBD // domingo o festivo → "D"; alimenta recargo, extras y la columna Día
   festivo: boolean // marca de festivo de la FILA (calendario o /DF en la fecha física)
@@ -445,6 +453,7 @@ const baseRow = (seg: Segment, concepto: number, override: Partial<TurnoRow>): T
   medico: seg.medico,
   documento: seg.documento,
   fecha: seg.fecha,
+  fechaInicio: seg.fechaInicio,
   turno_codigo: seg.turno_codigo,
   entrada: seg.entrada,
   salida: seg.salida,
@@ -528,6 +537,9 @@ export const buildTurnoRows = (
             turno_codigo: code,
             date: segDate,
             fecha: toDateOnly(segDate),
+            // El segmento post-medianoche se fecha al día siguiente (`segDate`), pero para
+            // período/quincena pertenece al día en que INICIÓ el turno (`date`).
+            fechaInicio: toDateOnly(date),
             // El turno pertenece a la semana de su día de INICIO (`date`), aunque su
             // segmento post-medianoche caiga en el lunes de la semana siguiente.
             weekKey: mondayKey(date),
