@@ -15,12 +15,13 @@ export function usePeriodFilter(rows: TurnoMedicoRow[]) {
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
 
-  // Mes dominante de las filas. Un turno partido puede derramar 1 día al mes
-  // vecino, así que tomamos el (año-mes) más frecuente como referencia.
+  // Mes dominante de las filas. Un turno partido derrama su cola post-medianoche al día
+  // siguiente; imputamos por la fecha de INICIO (`fechaInicio`) para que ese cruce cuente
+  // en el mes/quincena del turno y no se pierda en el borde del mes.
   const monthInfo = useMemo(() => {
     const counts = new Map<string, number>()
     for (const r of rows) {
-      const ym = (r.fecha ?? "").slice(0, 7)
+      const ym = ((r.fechaInicio ?? r.fecha) ?? "").slice(0, 7)
       if (ym) counts.set(ym, (counts.get(ym) ?? 0) + 1)
     }
     let ym = ""
@@ -33,13 +34,16 @@ export function usePeriodFilter(rows: TurnoMedicoRow[]) {
     return { ym, year, month, lastDay }
   }, [rows])
 
-  // Filas dentro del periodo seleccionado (base para la tabla y el export).
+  // Filas dentro del periodo seleccionado (base para la tabla y el export). Se imputa por
+  // `fechaInicio` (día de inicio del turno) para que la cola post-medianoche de una Noche a
+  // fin de mes/quincena salga en el período del turno y no quede fuera de rango.
   const periodRows = useMemo(() => {
     if (!periodFrom && !periodTo) return rows
     return rows.filter((r) => {
-      if (!r.fecha) return false
-      if (periodFrom && r.fecha < periodFrom) return false
-      if (periodTo && r.fecha > periodTo) return false
+      const fecha = r.fechaInicio ?? r.fecha
+      if (!fecha) return false
+      if (periodFrom && fecha < periodFrom) return false
+      if (periodTo && fecha > periodTo) return false
       return true
     })
   }, [rows, periodFrom, periodTo])

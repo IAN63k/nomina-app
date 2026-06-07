@@ -99,6 +99,7 @@ const blankRow = (medico: string, date: Date, resolved: { code: string; hours: n
   medico,
   documento: null,
   fecha: toDateOnly(date),
+  fechaInicio: toDateOnly(date),
   turno_codigo: resolved.code,
   entrada: null,
   salida: null,
