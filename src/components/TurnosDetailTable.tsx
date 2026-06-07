@@ -1,15 +1,16 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react"
-import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search, FileDown } from "lucide-react"
+import { useState, useMemo } from "react"
+import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search } from "lucide-react"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
 import type { ShiftModule } from "@/src/constants/shiftColors"
-import { useEmpleados } from "@/contexts/empleados-context"
+import type { PeriodFilter } from "@/src/hooks/usePeriodFilter"
 import { useAppearance } from "@/contexts/appearance-context"
 
 
 type Props = {
-  rows: TurnoMedicoRow[]
+  /** Estado de periodo/quincena compartido con el menú de exportación. */
+  period: PeriodFilter
   /** Módulo de origen, para resolver el color personalizado del turno. */
   module?: ShiftModule
 }
@@ -70,113 +71,25 @@ function getValue(row: TurnoMedicoRow, key: string): string | number {
   return (row as Record<string, unknown>)[key] as string | number ?? ""
 }
 
-const pad2 = (n: number) => String(n).padStart(2, "0")
-
-export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
-  const { getCedulaByName } = useEmpleados()
+export function TurnosDetailTable({ period, module = "medicos" }: Props) {
   const { colorOf } = useAppearance()
 
-  // ─── Periodo / quincena ────────────────────────────────────────────────
-  const [periodFrom, setPeriodFrom] = useState("")
-  const [periodTo, setPeriodTo]     = useState("")
-
-  // Mes dominante de las filas. Un turno partido puede derramar 1 día al mes
-  // vecino, así que tomamos el (año-mes) más frecuente como referencia.
-  const monthInfo = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const r of rows) {
-      const ym = (r.fecha ?? "").slice(0, 7)
-      if (ym) counts.set(ym, (counts.get(ym) ?? 0) + 1)
-    }
-    let ym = ""
-    let best = 0
-    for (const [key, n] of counts) {
-      if (n > best) { best = n; ym = key }
-    }
-    const [year, month] = ym ? ym.split("-").map(Number) : [0, 0]
-    const lastDay = ym ? new Date(year, month, 0).getDate() : 31
-    return { ym, year, month, lastDay }
-  }, [rows])
-
-  // Filas dentro del periodo seleccionado (base para la tabla y el TXT).
-  const periodRows = useMemo(() => {
-    if (!periodFrom && !periodTo) return rows
-    return rows.filter((r) => {
-      if (!r.fecha) return false
-      if (periodFrom && r.fecha < periodFrom) return false
-      if (periodTo && r.fecha > periodTo) return false
-      return true
-    })
-  }, [rows, periodFrom, periodTo])
-
-  const q1From = monthInfo.ym ? `${monthInfo.ym}-01` : ""
-  const q1To   = monthInfo.ym ? `${monthInfo.ym}-15` : ""
-  const q2From = monthInfo.ym ? `${monthInfo.ym}-16` : ""
-  const q2To   = monthInfo.ym ? `${monthInfo.ym}-${pad2(monthInfo.lastDay)}` : ""
-  const isQ1 = !!monthInfo.ym && periodFrom === q1From && periodTo === q1To
-  const isQ2 = !!monthInfo.ym && periodFrom === q2From && periodTo === q2To
-
-  // Límites del rango libre: el primer y último día del mes seleccionado, en coherencia
-  // con las quincenas. Así no se pueden elegir fechas fuera del mes que muestra la tabla.
-  const monthStart = q1From
-  const monthEnd   = q2To
-  const clampToMonth = (value: string) => {
-    if (!value || !monthInfo.ym) return value
-    if (value < monthStart) return monthStart
-    if (value > monthEnd) return monthEnd
-    return value
-  }
-
-  const applyQuincena = (half: 1 | 2) => {
-    if (!monthInfo.ym) return
-    setPeriodFrom(half === 1 ? q1From : q2From)
-    setPeriodTo(half === 1 ? q1To : q2To)
-    setPage(1)
-  }
-
-  const clearPeriod = () => {
-    setPeriodFrom("")
-    setPeriodTo("")
-    setPage(1)
-  }
-
-  // Sufijo descriptivo para el nombre del TXT (p. ej. "2026-06_01-15").
-  const periodSuffix = () => {
-    const day = (d: string) => d.slice(8, 10)
-    if (periodFrom && periodTo && periodFrom.slice(0, 7) === periodTo.slice(0, 7)) {
-      return `${periodFrom.slice(0, 7)}_${day(periodFrom)}-${day(periodTo)}`
-    }
-    if (periodFrom && periodTo) return `${periodFrom}_a_${periodTo}`
-    if (periodFrom) return `desde_${periodFrom}`
-    if (periodTo) return `hasta_${periodTo}`
-    return monthInfo.ym || "completo"
-  }
-
-  const exportTxt = useCallback(() => {
-    // La tabla puede mostrar un mismo (medico, fecha, concepto) partido en varias filas
-    // por franja horaria (cola post-medianoche + cabeza de la noche), pero la BD y la
-    // nómina esperan UNA línea por (medico, fecha, concepto). Re-agregamos aquí.
-    const aggregated = new Map<string, { cedula: string; concepto: number; horasrecargo: number }>()
-    for (const r of periodRows) {
-      if (r.horasrecargo <= 0) continue
-      const cedula = r.documento ? String(r.documento) : getCedulaByName(r.medico)
-      const key = `${r.medico}|${r.fecha}|${r.concepto}`
-      const existing = aggregated.get(key)
-      if (existing) existing.horasrecargo = Number((existing.horasrecargo + r.horasrecargo).toFixed(2))
-      else aggregated.set(key, { cedula, concepto: r.concepto, horasrecargo: r.horasrecargo })
-    }
-    const lines = [...aggregated.values()].map(
-      r => `${r.cedula}\t${r.concepto}\t${r.horasrecargo}`
-    )
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement("a")
-    a.href     = url
-    a.download = `recargos_${periodSuffix()}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodRows, getCedulaByName, periodFrom, periodTo, monthInfo.ym])
+  // Periodo/quincena: estado compartido con el menú de exportación (usePeriodFilter).
+  const {
+    periodFrom,
+    periodTo,
+    setPeriodFrom,
+    setPeriodTo,
+    monthInfo,
+    isQ1,
+    isQ2,
+    monthStart,
+    monthEnd,
+    clampToMonth,
+    applyQuincena,
+    clearPeriod,
+    periodRows,
+  } = period
 
   const [search, setSearch]               = useState("")
   const [filters, setFilters]             = useState<Record<string, string>>({})
@@ -185,17 +98,15 @@ export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
   const [sortCol, setSortCol]             = useState<string>("fecha")
   const [sortDir, setSortDir]             = useState<SortDir>("asc")
 
-  // Al cambiar el mes dominante (otra pestaña de mes), limpiar el periodo
-  // para no dejar la tabla vacía con un rango del mes anterior.
-  const prevYmRef = useRef(monthInfo.ym)
-  useEffect(() => {
-    if (prevYmRef.current !== monthInfo.ym) {
-      prevYmRef.current = monthInfo.ym
-      setPeriodFrom("")
-      setPeriodTo("")
-      setPage(1)
-    }
-  }, [monthInfo.ym])
+  // Al cambiar el periodo o el mes dominante, volver a la primera página para no
+  // quedar fuera de rango. Se ajusta durante el render (patrón recomendado de React)
+  // en lugar de en un efecto.
+  const periodSig = `${periodFrom}|${periodTo}|${monthInfo.ym}`
+  const [prevPeriodSig, setPrevPeriodSig] = useState(periodSig)
+  if (prevPeriodSig !== periodSig) {
+    setPrevPeriodSig(periodSig)
+    setPage(1)
+  }
 
   const handleSort = (col: string) => {
     if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc")
@@ -283,7 +194,7 @@ export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
             min={monthStart || undefined}
             max={(periodTo || monthEnd) || undefined}
             disabled={!monthInfo.ym}
-            onChange={e => { setPeriodFrom(clampToMonth(e.target.value)); setPage(1) }}
+            onChange={e => setPeriodFrom(clampToMonth(e.target.value))}
             className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
@@ -295,7 +206,7 @@ export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
             min={(periodFrom || monthStart) || undefined}
             max={monthEnd || undefined}
             disabled={!monthInfo.ym}
-            onChange={e => { setPeriodTo(clampToMonth(e.target.value)); setPage(1) }}
+            onChange={e => setPeriodTo(clampToMonth(e.target.value))}
             className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
@@ -328,14 +239,6 @@ export function TurnosDetailTable({ rows, module = "medicos" }: Props) {
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <button
-            type="button"
-            onClick={exportTxt}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
-          >
-            <FileDown className="h-3.5 w-3.5" />
-            Exportar TXT
-          </button>
           <span className="tabular-nums">{filtered.length} registros</span>
           <select
             value={pageSize}
