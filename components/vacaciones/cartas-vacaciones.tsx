@@ -12,14 +12,26 @@ import {
   Files,
   ListChecks,
   Loader2,
+  Pencil,
   Search,
   Sparkles,
+  Trash2,
   Upload,
+  UserPlus,
   X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Table,
   TableBody,
@@ -74,6 +86,13 @@ export function CartasVacaciones() {
   const [activeSheet, setActiveSheet] = useState<string>("");
   const [sheet, setSheet] = useState<SheetData>(EMPTY_SHEET);
   const [excelName, setExcelName] = useState<string | null>(null);
+
+  // Personas agregadas manualmente (sin Excel). Usan índices negativos para no
+  // colisionar con las filas del Excel (que empiezan en 1).
+  const [manualRows, setManualRows] = useState<CartaRow[]>([]);
+  const manualSeq = useRef(0);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formRow, setFormRow] = useState<CartaRow | null>(null);
 
   // Selección / filtros
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -149,14 +168,57 @@ export function CartasVacaciones() {
     }
   };
 
+  // Abre el formulario para una persona nueva o para editar una existente.
+  const openNewPersona = () => {
+    setFormRow(null);
+    setFormOpen(true);
+  };
+  const openEditPersona = (row: CartaRow) => {
+    setFormRow(row);
+    setFormOpen(true);
+  };
+
+  // Guarda los datos del formulario como una fila manual (alta o edición).
+  const savePersona = (values: Record<string, string>) => {
+    if (formRow) {
+      setManualRows((prev) =>
+        prev.map((r) =>
+          r.index === formRow.index ? { ...r, raw: { ...values }, values } : r
+        )
+      );
+    } else {
+      manualSeq.current -= 1;
+      const index = manualSeq.current;
+      setManualRows((prev) => [...prev, { index, raw: { ...values }, values }]);
+      setSelected((prev) => new Set(prev).add(index));
+    }
+    setFormOpen(false);
+    setFormRow(null);
+  };
+
+  const removePersona = (index: number) => {
+    setManualRows((prev) => prev.filter((r) => r.index !== index));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(index);
+      return next;
+    });
+  };
+
   const missing = useMemo(
     () => marcadoresSinColumna(markers, sheet.headers),
     [markers, sheet.headers]
   );
 
+  // Filas del Excel + personas agregadas manualmente.
+  const allRows = useMemo(
+    () => [...sheet.rows, ...manualRows],
+    [sheet.rows, manualRows]
+  );
+
   const filteredRows = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return sheet.rows.filter((r) => {
+    return allRows.filter((r) => {
       if (onlyApproved && !aprobado(r)) return false;
       if (!q) return true;
       const hay = [
@@ -171,11 +233,11 @@ export function CartasVacaciones() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [sheet.rows, search, onlyApproved]);
+  }, [allRows, search, onlyApproved]);
 
   const selectedRows = useMemo(
-    () => sheet.rows.filter((r) => selected.has(r.index)),
-    [sheet.rows, selected]
+    () => allRows.filter((r) => selected.has(r.index)),
+    [allRows, selected]
   );
 
   const allFilteredSelected =
@@ -245,7 +307,8 @@ export function CartasVacaciones() {
     setPdfError(null);
   };
 
-  const hasData = sheet.rows.length > 0;
+  const hasExcel = sheet.rows.length > 0;
+  const hasData = allRows.length > 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -330,7 +393,7 @@ export function CartasVacaciones() {
           </label>
         </div>
 
-        {hasData && missing.length > 0 && (
+        {hasExcel && missing.length > 0 && (
           <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <p className="text-sm">
@@ -350,8 +413,8 @@ export function CartasVacaciones() {
         <StepHeader
           step={2}
           icon={<Files className="h-4 w-4" />}
-          title="Base de datos (Excel)"
-          subtitle="Cada fila de la hoja genera una carta. Los encabezados deben coincidir con los marcadores."
+          title="Datos de los empleados"
+          subtitle="Carga un Excel (cada fila es una carta) o agrega una persona a mano y completa sus datos."
         />
 
         <div className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
@@ -398,6 +461,35 @@ export function CartasVacaciones() {
             </div>
           )}
         </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            o
+          </span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            ¿Solo necesitas una carta? Agrega la persona y completa sus datos en un
+            formulario.
+          </p>
+          <Button
+            variant="outline"
+            onClick={openNewPersona}
+            disabled={markers.length === 0}
+            title={
+              markers.length === 0
+                ? "Esperando los marcadores de la plantilla…"
+                : "Agregar una persona manualmente"
+            }
+            className="shrink-0 transition-all duration-200 hover:-translate-y-px"
+          >
+            <UserPlus className="h-4 w-4" />
+            Agregar persona
+          </Button>
+        </div>
       </section>
 
       {/* Paso 3 — Cartas */}
@@ -435,7 +527,7 @@ export function CartasVacaciones() {
                 Solo aprobados
               </button>
               <span className="rounded-md border bg-background px-3 py-1.5 text-sm text-muted-foreground">
-                {selectedRows.length} de {sheet.rows.length} seleccionada(s)
+                {selectedRows.length} de {allRows.length} seleccionada(s)
               </span>
 
               <div className="inline-flex items-center rounded-md border bg-background p-0.5">
@@ -544,6 +636,7 @@ export function CartasVacaciones() {
                 {filteredRows.map((row) => {
                   const checked = selected.has(row.index);
                   const ok = aprobado(row);
+                  const esManual = row.index < 0;
                   return (
                     <TableRow
                       key={row.index}
@@ -561,8 +654,15 @@ export function CartasVacaciones() {
                         />
                       </TableCell>
                       <TableCell>
-                        <div className="font-medium">
-                          {`${v(row, "NOMBRE")} ${v(row, "APELLIDO")}`.trim() || "—"}
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">
+                            {`${v(row, "NOMBRE")} ${v(row, "APELLIDO")}`.trim() || "—"}
+                          </span>
+                          {esManual && (
+                            <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                              Manual
+                            </span>
+                          )}
                         </div>
                         {v(row, "CEDULA") && (
                           <div className="text-xs text-muted-foreground">CC {v(row, "CEDULA")}</div>
@@ -606,14 +706,37 @@ export function CartasVacaciones() {
                         )}
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          title="Descargar esta carta"
-                          onClick={() => handleSingle(row)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-0.5">
+                          {esManual && (
+                            <>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Editar datos"
+                                onClick={() => openEditPersona(row)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Eliminar persona"
+                                onClick={() => removePersona(row.index)}
+                                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Descargar esta carta"
+                            onClick={() => handleSingle(row)}
+                          >
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -637,9 +760,171 @@ export function CartasVacaciones() {
             Carga el Excel con la programación de vacaciones y combina cada fila con la plantilla
             para descargar las cartas en Word, individuales o en un único ZIP.
           </p>
+          <Button
+            variant="outline"
+            onClick={openNewPersona}
+            disabled={markers.length === 0}
+            className="mx-auto mt-6"
+          >
+            <UserPlus className="h-4 w-4" />
+            Agregar una persona manualmente
+          </Button>
         </section>
       )}
+
+      <PersonaForm
+        open={formOpen}
+        markers={markers}
+        row={formRow}
+        onSave={savePersona}
+        onClose={() => {
+          setFormOpen(false);
+          setFormRow(null);
+        }}
+      />
     </div>
+  );
+}
+
+// Marcadores que conviene mostrar primero en el formulario; el resto va detrás
+// en el orden de la plantilla.
+const ORDEN_CAMPOS = [
+  "NOMBRE",
+  "APELLIDO",
+  "CEDULA",
+  "CARGO",
+  "C.T",
+  "SEDE",
+  "PERIODO 1",
+  "PERIODO 2",
+  "SALIDA",
+  "HASTA",
+  "DIAS_TOMA",
+  "DIAS_TIENE",
+];
+
+function ordenarCampos(markers: string[]): string[] {
+  return [...markers].sort((a, b) => {
+    const ia = ORDEN_CAMPOS.indexOf(a);
+    const ib = ORDEN_CAMPOS.indexOf(b);
+    if (ia !== -1 && ib !== -1) return ia - ib;
+    if (ia !== -1) return -1;
+    if (ib !== -1) return 1;
+    return a.localeCompare(b);
+  });
+}
+
+/**
+ * Formulario lateral para registrar (o editar) una persona a mano. Los campos
+ * se derivan de los marcadores de la plantilla, así la carta queda completa.
+ */
+function PersonaForm({
+  open,
+  markers,
+  row,
+  onSave,
+  onClose,
+}: {
+  open: boolean;
+  markers: string[];
+  row: CartaRow | null;
+  onSave: (values: Record<string, string>) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="w-full gap-0 sm:max-w-md">
+        <SheetHeader className="border-b">
+          <SheetTitle>{row ? "Editar persona" : "Agregar persona"}</SheetTitle>
+          <SheetDescription>
+            Completa los datos de la carta. Cada campo corresponde a un marcador de
+            la plantilla; los que dejes en blanco saldrán vacíos.
+          </SheetDescription>
+        </SheetHeader>
+
+        {/* El cuerpo se remonta en cada apertura (key) para arrancar con los
+            datos de la fila en edición o en blanco, sin efectos. */}
+        {open && (
+          <PersonaFormBody
+            key={row ? row.index : "nueva"}
+            markers={markers}
+            row={row}
+            onSave={onSave}
+            onClose={onClose}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function PersonaFormBody({
+  markers,
+  row,
+  onSave,
+  onClose,
+}: {
+  markers: string[];
+  row: CartaRow | null;
+  onSave: (values: Record<string, string>) => void;
+  onClose: () => void;
+}) {
+  const campos = useMemo(() => ordenarCampos(markers), [markers]);
+  const [values, setValues] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const m of markers) init[m] = row?.values[m] ?? "";
+    return init;
+  });
+
+  const setField = (campo: string, valor: string) =>
+    setValues((prev) => ({ ...prev, [campo]: valor }));
+
+  const algunDato = Object.values(values).some((v) => v.trim() !== "");
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!algunDato) return;
+    // Normaliza: recorta espacios en cada campo.
+    const limpio: Record<string, string> = {};
+    for (const m of markers) limpio[m] = (values[m] ?? "").trim();
+    onSave(limpio);
+  };
+
+  return (
+    <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {campos.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            La plantilla no tiene marcadores, no hay campos para completar.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {campos.map((campo) => (
+              <div key={campo} className="flex flex-col gap-1.5">
+                <Label htmlFor={`campo-${campo}`} className="font-mono text-xs">
+                  {campo}
+                </Label>
+                <Input
+                  id={`campo-${campo}`}
+                  value={values[campo] ?? ""}
+                  onChange={(e) => setField(campo, e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <SheetFooter className="flex-row justify-end gap-2 border-t">
+        <Button type="button" variant="outline" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button type="submit" disabled={!algunDato}>
+          {row ? "Guardar cambios" : "Agregar"}
+        </Button>
+      </SheetFooter>
+    </form>
   );
 }
 
