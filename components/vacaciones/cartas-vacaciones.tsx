@@ -4,8 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { WorkBook } from "xlsx";
 import {
   AlertTriangle,
+  CalendarDays,
   CheckCircle2,
   Download,
+  Eye,
   FileCheck2,
   FileText,
   FileType2,
@@ -43,11 +45,14 @@ import {
 import { cn } from "@/lib/utils";
 import {
   CartaRow,
+  MARCADOR_FECHA,
+  MESES_ES,
   SheetData,
   cartaBlob,
   descargar,
   extractSheet,
   extraerMarcadores,
+  fechaCartaTexto,
   fetchPlantillaDefecto,
   generarPdf,
   generarZip,
@@ -56,7 +61,9 @@ import {
   nombreCarta,
   pickSheet,
   readWorkbook,
+  renderCarta,
 } from "@/src/services/cartasVacaciones";
+import { renderDocxInIframe } from "@/src/services/cartasPdfClient";
 
 const EMPTY_SHEET: SheetData = { headers: [], rows: [] };
 
@@ -93,6 +100,17 @@ export function CartasVacaciones() {
   const manualSeq = useRef(0);
   const [formOpen, setFormOpen] = useState(false);
   const [formRow, setFormRow] = useState<CartaRow | null>(null);
+
+  // Fecha de la carta ({FECHACARTA}). La ajusta el usuario desde el módulo; no
+  // viene del Excel ni del formulario. Pre-seleccionada al mes/año actuales.
+  const [mesCarta, setMesCarta] = useState(() => new Date().getMonth() + 1);
+  const [anioCarta, setAnioCarta] = useState(() => new Date().getFullYear());
+
+  // Previsualización: docx ya renderizado a bytes + título del panel. El seq
+  // remonta el visor en cada apertura para arrancar limpio sin efectos.
+  const [previewDocx, setPreviewDocx] = useState<Uint8Array | null>(null);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [previewSeq, setPreviewSeq] = useState(0);
 
   // Selección / filtros
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -205,10 +223,53 @@ export function CartasVacaciones() {
     });
   };
 
-  const missing = useMemo(
-    () => marcadoresSinColumna(markers, sheet.headers),
-    [markers, sheet.headers]
+  // ¿La plantilla usa {FECHACARTA}? Solo entonces mostramos el selector de fecha.
+  const usaFecha = markers.includes(MARCADOR_FECHA);
+  const fechaCartaStr = fechaCartaTexto(mesCarta, anioCarta);
+
+  // Inyecta {FECHACARTA} (valor del módulo) en cada fila antes de generar.
+  const conFecha = (rows: CartaRow[]): CartaRow[] =>
+    rows.map((r) => ({
+      ...r,
+      values: { ...r.values, [MARCADOR_FECHA]: fechaCartaStr },
+    }));
+
+  // {FECHACARTA} no es un campo del Excel ni del formulario: se excluye de ambos.
+  const marcadoresDatos = useMemo(
+    () => markers.filter((m) => m !== MARCADOR_FECHA),
+    [markers]
   );
+
+  const missing = useMemo(
+    () => marcadoresSinColumna(marcadoresDatos, sheet.headers),
+    [marcadoresDatos, sheet.headers]
+  );
+
+  // Previsualización de una carta concreta (con sus datos + la fecha del módulo).
+  const previewRow = (row: CartaRow) => {
+    if (!templateBuf.current) return;
+    setPreviewTitle(
+      `${v(row, "NOMBRE")} ${v(row, "APELLIDO")}`.trim() || `Fila ${row.index}`
+    );
+    setPreviewDocx(
+      renderCarta(templateBuf.current, {
+        ...row.values,
+        [MARCADOR_FECHA]: fechaCartaStr,
+      })
+    );
+    setPreviewSeq((s) => s + 1);
+  };
+
+  // Previsualización de la plantilla en blanco: los marcadores quedan visibles
+  // ({NOMBRE}, {CARGO}…) y solo se aplica el mes elegido.
+  const previewPlantilla = () => {
+    if (!templateBuf.current) return;
+    const vals: Record<string, string> = {};
+    for (const m of markers) vals[m] = m === MARCADOR_FECHA ? fechaCartaStr : `{${m}}`;
+    setPreviewTitle("Plantilla");
+    setPreviewDocx(renderCarta(templateBuf.current, vals));
+    setPreviewSeq((s) => s + 1);
+  };
 
   // Filas del Excel + personas agregadas manualmente.
   const allRows = useMemo(
@@ -225,7 +286,6 @@ export function CartasVacaciones() {
         v(r, "NOMBRE"),
         v(r, "APELLIDO"),
         v(r, "CARGO"),
-        v(r, "C.T"),
         v(r, "CEDULA"),
         v(r, "SEDE"),
       ]
@@ -271,16 +331,18 @@ export function CartasVacaciones() {
     setError(null);
     setPdfError(null);
     try {
+      // {FECHACARTA} se inyecta aquí: lo controla el módulo, no los datos base.
+      const filas = conFecha(rows);
       if (fmt === "pdf") {
-        setPdfProgress({ done: 0, total: rows.length });
-        const { blob, filename } = await generarPdf(templateBuf.current, rows, (done, total) =>
+        setPdfProgress({ done: 0, total: filas.length });
+        const { blob, filename } = await generarPdf(templateBuf.current, filas, (done, total) =>
           setPdfProgress({ done, total })
         );
         descargar(blob, filename);
-      } else if (rows.length === 1) {
-        descargar(cartaBlob(templateBuf.current, rows[0]), `${nombreCarta(rows[0])}.docx`);
+      } else if (filas.length === 1) {
+        descargar(cartaBlob(templateBuf.current, filas[0]), `${nombreCarta(filas[0])}.docx`);
       } else {
-        const blob = await generarZip(templateBuf.current, rows);
+        const blob = await generarZip(templateBuf.current, filas);
         descargar(blob, `cartas_vacaciones_${activeSheet || "datos"}.zip`);
       }
     } catch (err) {
@@ -352,22 +414,28 @@ export function CartasVacaciones() {
                 <p className="mb-2 text-xs font-medium text-muted-foreground">Marcadores detectados</p>
                 <div className="flex flex-wrap gap-1.5">
                   {markers.map((m) => {
-                    const falta = missing.includes(m);
+                    const esFecha = m === MARCADOR_FECHA;
+                    const falta = !esFecha && missing.includes(m);
                     return (
                       <span
                         key={m}
                         title={
-                          falta
-                            ? "Sin columna con el mismo nombre en el Excel"
-                            : "Vinculado a una columna del Excel"
+                          esFecha
+                            ? "Se ajusta desde el módulo (no viene del Excel)"
+                            : falta
+                              ? "Sin columna con el mismo nombre en el Excel"
+                              : "Vinculado a una columna del Excel"
                         }
                         className={cn(
-                          "inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-xs transition-colors",
-                          falta
-                            ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                            : "border-primary/30 bg-primary/5 text-foreground"
+                          "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs transition-colors",
+                          esFecha
+                            ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400"
+                            : falta
+                              ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                              : "border-primary/30 bg-primary/5 text-foreground"
                         )}
                       >
+                        {esFecha && <CalendarDays className="h-3 w-3" />}
                         {`{${m}}`}
                       </span>
                     );
@@ -391,6 +459,76 @@ export function CartasVacaciones() {
               }}
             />
           </label>
+        </div>
+
+        {usaFecha && (
+          <div className="mt-4 rounded-lg border bg-background p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-md border bg-muted p-2 text-sky-600">
+                  <CalendarDays className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Fecha de la carta</p>
+                  <p className="text-xs text-muted-foreground">
+                    Se inserta en{" "}
+                    <span className="font-mono">{`{FECHACARTA}`}</span>. La eliges aquí;
+                    no viene del Excel ni del formulario.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Mes</span>
+                  <select
+                    value={mesCarta}
+                    onChange={(e) => setMesCarta(Number(e.target.value))}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm capitalize shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    {MESES_ES.slice(1).map((nombre, i) => (
+                      <option key={nombre} value={i + 1} className="capitalize">
+                        {nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">Año</span>
+                  <select
+                    value={anioCarta}
+                    onChange={(e) => setAnioCarta(Number(e.target.value))}
+                    className="h-9 rounded-md border border-input bg-background px-3 text-sm shadow-xs outline-none transition-colors focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 1 + i).map(
+                      (y) => (
+                        <option key={y} value={y}>
+                          {y}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <p className="mt-3 text-sm text-muted-foreground">
+              Encabezado:{" "}
+              <span className="font-medium text-foreground">
+                Santiago de Cali, {fechaCartaStr}
+              </span>
+            </p>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={previewPlantilla}
+            disabled={markers.length === 0}
+          >
+            <Eye className="h-4 w-4" />
+            Ver plantilla
+          </Button>
         </div>
 
         {hasExcel && missing.length > 0 && (
@@ -560,6 +698,16 @@ export function CartasVacaciones() {
               </div>
 
               <Button
+                variant="outline"
+                onClick={() => previewRow(selectedRows[0] ?? filteredRows[0])}
+                disabled={selectedRows.length === 0 && filteredRows.length === 0}
+                title="Previsualizar la primera carta seleccionada"
+              >
+                <Eye className="h-4 w-4" />
+                Vista previa
+              </Button>
+
+              <Button
                 onClick={handleGenerate}
                 disabled={generating || selectedRows.length === 0}
                 className="transition-all duration-200 hover:-translate-y-px disabled:hover:translate-y-0"
@@ -624,7 +772,7 @@ export function CartasVacaciones() {
                   </TableHead>
                   <TableHead>Empleado</TableHead>
                   <TableHead>Cargo</TableHead>
-                  <TableHead>Área (C.T)</TableHead>
+                  <TableHead>Sede</TableHead>
                   <TableHead>Periodo</TableHead>
                   <TableHead className="text-center">Días</TableHead>
                   <TableHead>Vacaciones</TableHead>
@@ -671,7 +819,7 @@ export function CartasVacaciones() {
                       <TableCell className="max-w-48 truncate text-muted-foreground">
                         {v(row, "CARGO") || "—"}
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{v(row, "C.T") || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{v(row, "SEDE") || "—"}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {v(row, "PERIODO 1") || v(row, "PERIODO 2")
                           ? `${v(row, "PERIODO 1")} – ${v(row, "PERIODO 2")}`
@@ -707,6 +855,14 @@ export function CartasVacaciones() {
                       </TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Vista previa"
+                            onClick={() => previewRow(row)}
+                          >
+                            <Eye className="h-4 w-4" />
+                          </Button>
                           {esManual && (
                             <>
                               <Button
@@ -774,13 +930,20 @@ export function CartasVacaciones() {
 
       <PersonaForm
         open={formOpen}
-        markers={markers}
+        markers={marcadoresDatos}
         row={formRow}
         onSave={savePersona}
         onClose={() => {
           setFormOpen(false);
           setFormRow(null);
         }}
+      />
+
+      <CartaPreview
+        docx={previewDocx}
+        seq={previewSeq}
+        title={previewTitle}
+        onClose={() => setPreviewDocx(null)}
       />
     </div>
   );
@@ -793,7 +956,6 @@ const ORDEN_CAMPOS = [
   "APELLIDO",
   "CEDULA",
   "CARGO",
-  "C.T",
   "SEDE",
   "PERIODO 1",
   "PERIODO 2",
@@ -925,6 +1087,86 @@ function PersonaFormBody({
         </Button>
       </SheetFooter>
     </form>
+  );
+}
+
+/**
+ * Panel lateral que previsualiza una carta ya renderizada (docx → iframe vía
+ * docx-preview). El render es un efecto sobre un sistema externo (el iframe).
+ */
+function CartaPreview({
+  docx,
+  seq,
+  title,
+  onClose,
+}: {
+  docx: Uint8Array | null;
+  seq: number;
+  title: string;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet open={docx !== null} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-2xl">
+        <SheetHeader className="border-b">
+          <SheetTitle className="truncate pr-8">
+            Vista previa{title ? ` — ${title}` : ""}
+          </SheetTitle>
+          <SheetDescription>
+            Así se verá la carta al generarla. Es solo una previsualización.
+          </SheetDescription>
+        </SheetHeader>
+
+        {/* key=seq → se remonta en cada apertura y arranca con loading=true sin
+            necesidad de setState dentro del efecto. */}
+        {docx && <CartaPreviewBody key={seq} docx={docx} />}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function CartaPreviewBody({ docx }: { docx: Uint8Array }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!iframeRef.current) return;
+    let cancel = false;
+    renderDocxInIframe(docx, iframeRef.current)
+      .then(() => !cancel && setLoading(false))
+      .catch((err) => {
+        if (cancel) return;
+        setError((err as Error).message);
+        setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [docx]);
+
+  return (
+    <div className="relative min-h-0 flex-1 bg-muted">
+      {loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center gap-2 bg-muted/80 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Generando vista previa…
+        </div>
+      )}
+      {error && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-6 text-center text-sm text-destructive">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {error}
+          </span>
+        </div>
+      )}
+      <iframe
+        ref={iframeRef}
+        title="Vista previa de la carta"
+        className="h-full w-full border-0"
+      />
+    </div>
   );
 }
 
