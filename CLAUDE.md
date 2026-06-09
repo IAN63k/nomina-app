@@ -80,6 +80,16 @@ The Recargos page (`/recargos`) has two tabs that share one pure calculation eng
 
 The `recargoConfig` (night window + discount) lives in `SettingsSidebarContext` and is **shared** by both tabs. The Core Data Flow above describes the Médicos path; Auxiliares mirrors it through the same engine.
 
+### Cartas de Vacaciones Module (`/vacaciones`)
+
+Mail-merge that generates one vacation letter per employee, porting the Python tool in `docs/cartas/` (`generar_cartas_referencia.py`). A Word template with `{MARKER}` placeholders is combined with an Excel sheet whose headers match those markers exactly.
+
+- Engine: `src/services/cartasVacaciones.ts` (single source of truth). UI: `components/vacaciones/cartas-vacaciones.tsx`.
+- **Template**: bundled at `public/templates/carta_vacaciones.docx` (the real letter, copy in `docs/cartas/`); the user may upload a custom `.docx`. Rendering uses **docxtemplater + pizzip** with default `{ }` delimiters and a **literal parser** (`scope[tag]`) so markers with spaces/dots work (`{PERIODO 1}`, `{C.T}`); `nullGetter` leaves unmatched markers blank.
+- **Excel**: read with `xlsx` (`cellDates:true`, local date getters give the correct calendar day). Default sheet `PROGRAMACION` (selectable). Value formatting mirrors the Python: long Spanish dates (`1 de junio de 2026`), short `dd/mm/aaaa` for `COLUMNAS_FECHA_CORTA` (`PERIODO 1/2`), integers without decimals, dates < 1900 treated as empty.
+- **Empty-row filter**: a row is kept only if it has an identity value (`NOMBRE`/`APELLIDO`/`CEDULA`); this drops the many "noise" rows that carry only a stray `DIAS_TOMA: 0`. Falls back to "any non-empty cell" if the sheet has no identity columns.
+- **Output**: Word (`.docx` single, or a ZIP via `jszip`) or **PDF**. PDF conversion is server-side via `app/api/cartas/pdf/route.ts`, which shells out to **LibreOffice headless** (`soffice`, override with `SOFFICE_PATH`) with a per-request isolated user profile; returns a single PDF or a ZIP of PDFs. PDF therefore requires LibreOffice installed on the host (as the Python `convertir_a_pdf.py` did).
+
 ### State Management
 
 - `MedicosTurnosContext` — shift configuration (hours, times, recargo window per shift)
