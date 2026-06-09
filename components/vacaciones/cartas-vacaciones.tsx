@@ -85,6 +85,7 @@ export function CartasVacaciones() {
   const [error, setError] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{ done: number; total: number } | null>(null);
   const lastAttempt = useRef<CartaRow[]>([]);
 
   // Cargar la plantilla incluida al montar.
@@ -209,7 +210,10 @@ export function CartasVacaciones() {
     setPdfError(null);
     try {
       if (fmt === "pdf") {
-        const { blob, filename } = await generarPdf(templateBuf.current, rows);
+        setPdfProgress({ done: 0, total: rows.length });
+        const { blob, filename } = await generarPdf(templateBuf.current, rows, (done, total) =>
+          setPdfProgress({ done, total })
+        );
         descargar(blob, filename);
       } else if (rows.length === 1) {
         descargar(cartaBlob(templateBuf.current, rows[0]), `${nombreCarta(rows[0])}.docx`);
@@ -224,6 +228,7 @@ export function CartasVacaciones() {
       else setError(`Error al generar las cartas: ${msg}`);
     } finally {
       setGenerating(false);
+      setPdfProgress(null);
     }
   };
 
@@ -472,7 +477,9 @@ export function CartasVacaciones() {
                 ) : (
                   <Download className="h-4 w-4" />
                 )}
-                Generar {selectedRows.length > 1 ? `${selectedRows.length} cartas` : "carta"}
+                {generating && pdfProgress && pdfProgress.total > 1
+                  ? `Generando PDF ${pdfProgress.done}/${pdfProgress.total}`
+                  : `Generar ${selectedRows.length > 1 ? `${selectedRows.length} cartas` : "carta"}`}
               </Button>
             </div>
           </div>
