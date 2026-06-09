@@ -949,6 +949,25 @@ export function CartasVacaciones() {
   );
 }
 
+// Campo de ayuda del formulario individual: saldo de días = DIAS_TIENE −
+// DIAS_TOMA. No es un marcador de la plantilla (a menos que se agregue allí);
+// se precalcula y queda editable para poder ajustarlo a mano.
+const CAMPO_SALDO = "SALDO";
+
+/**
+ * Calcula el saldo de días como DIAS_TIENE − DIAS_TOMA. Devuelve "" si ninguno
+ * tiene valor o si alguno no es numérico; una celda vacía cuenta como 0.
+ */
+function calcularSaldo(tiene: string, toma: string): string {
+  const t = (tiene ?? "").trim();
+  const m = (toma ?? "").trim();
+  if (!t && !m) return "";
+  const nt = t === "" ? 0 : Number(t.replace(",", "."));
+  const nm = m === "" ? 0 : Number(m.replace(",", "."));
+  if (!Number.isFinite(nt) || !Number.isFinite(nm)) return "";
+  return String(nt - nm);
+}
+
 // Marcadores que conviene mostrar primero en el formulario; el resto va detrás
 // en el orden de la plantilla.
 const ORDEN_CAMPOS = [
@@ -963,6 +982,7 @@ const ORDEN_CAMPOS = [
   "HASTA",
   "DIAS_TOMA",
   "DIAS_TIENE",
+  CAMPO_SALDO,
 ];
 
 function ordenarCampos(markers: string[]): string[] {
@@ -1031,15 +1051,41 @@ function PersonaFormBody({
   onSave: (values: Record<string, string>) => void;
   onClose: () => void;
 }) {
-  const campos = useMemo(() => ordenarCampos(markers), [markers]);
+  // El saldo es un campo extra del formulario; si la plantilla ya lo trae como
+  // marcador, se respeta su posición y no se duplica.
+  const campos = useMemo(
+    () => ordenarCampos(markers.includes(CAMPO_SALDO) ? markers : [...markers, CAMPO_SALDO]),
+    [markers]
+  );
+
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const m of markers) init[m] = row?.values[m] ?? "";
+    // Saldo: usa el guardado o lo calcula a partir de los días.
+    init[CAMPO_SALDO] =
+      row?.values[CAMPO_SALDO] ?? calcularSaldo(init["DIAS_TIENE"] ?? "", init["DIAS_TOMA"] ?? "");
     return init;
   });
 
+  // Mientras el usuario no edite el saldo a mano, se mantiene sincronizado con
+  // DIAS_TIENE − DIAS_TOMA. Al editarlo, deja de recalcularse solo.
+  const [saldoManual, setSaldoManual] = useState(() =>
+    Boolean((row?.values[CAMPO_SALDO] ?? "").trim())
+  );
+
   const setField = (campo: string, valor: string) =>
-    setValues((prev) => ({ ...prev, [campo]: valor }));
+    setValues((prev) => {
+      const next = { ...prev, [campo]: valor };
+      if (!saldoManual && (campo === "DIAS_TIENE" || campo === "DIAS_TOMA")) {
+        next[CAMPO_SALDO] = calcularSaldo(next["DIAS_TIENE"] ?? "", next["DIAS_TOMA"] ?? "");
+      }
+      return next;
+    });
+
+  const setSaldo = (valor: string) => {
+    setSaldoManual(true);
+    setValues((prev) => ({ ...prev, [CAMPO_SALDO]: valor }));
+  };
 
   const algunDato = Object.values(values).some((v) => v.trim() !== "");
 
@@ -1048,7 +1094,7 @@ function PersonaFormBody({
     if (!algunDato) return;
     // Normaliza: recorta espacios en cada campo.
     const limpio: Record<string, string> = {};
-    for (const m of markers) limpio[m] = (values[m] ?? "").trim();
+    for (const campo of campos) limpio[campo] = (values[campo] ?? "").trim();
     onSave(limpio);
   };
 
@@ -1061,19 +1107,30 @@ function PersonaFormBody({
           </p>
         ) : (
           <div className="flex flex-col gap-4">
-            {campos.map((campo) => (
-              <div key={campo} className="flex flex-col gap-1.5">
-                <Label htmlFor={`campo-${campo}`} className="font-mono text-xs">
-                  {campo}
-                </Label>
-                <Input
-                  id={`campo-${campo}`}
-                  value={values[campo] ?? ""}
-                  onChange={(e) => setField(campo, e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-            ))}
+            {campos.map((campo) => {
+              const esSaldo = campo === CAMPO_SALDO;
+              return (
+                <div key={campo} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`campo-${campo}`} className="font-mono text-xs">
+                    {campo}
+                  </Label>
+                  <Input
+                    id={`campo-${campo}`}
+                    value={values[campo] ?? ""}
+                    onChange={(e) =>
+                      esSaldo ? setSaldo(e.target.value) : setField(campo, e.target.value)
+                    }
+                    inputMode={esSaldo ? "numeric" : undefined}
+                    autoComplete="off"
+                  />
+                  {esSaldo && (
+                    <p className="text-xs text-muted-foreground">
+                      Calculado como DIAS_TIENE − DIAS_TOMA. Puedes ajustarlo.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
