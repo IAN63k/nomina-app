@@ -1,6 +1,6 @@
 {
   "name": "nomina-app",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -23,7 +23,7 @@
     "clsx": "^2.1.1",
     "docx-preview": "^0.3.7",
     "docxtemplater": "^3.68.7",
-    "html2canvas-pro": "^2.0.4",
+    "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.562.0",
