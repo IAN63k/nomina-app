@@ -280,65 +280,38 @@ export async function generarZip(
   return zip.generateAsync({ type: "blob" });
 }
 
-/** Error de la conversión a PDF, con un código que la UI puede distinguir. */
-export class PdfError extends Error {
-  code: string;
-  constructor(message: string, code: string) {
-    super(message);
-    this.name = "PdfError";
-    this.code = code;
-  }
-}
-
-/** Renderiza las cartas seleccionadas como .docx en memoria. */
-export function renderDocxFiles(
-  templateBuf: ArrayBuffer,
-  rows: CartaRow[]
-): { name: string; bytes: Uint8Array }[] {
-  const usados = new Map<string, number>();
-  return rows.map((row) => {
-    let nombre = nombreCarta(row);
-    const previo = usados.get(nombre) ?? 0;
-    usados.set(nombre, previo + 1);
-    if (previo > 0) nombre = `${nombre}_${previo + 1}`;
-    return { name: `${nombre}.docx`, bytes: renderCarta(templateBuf, row.values) };
-  });
-}
-
 /**
- * Convierte las cartas seleccionadas a PDF en el servidor (LibreOffice).
- * Devuelve un PDF si es una sola carta o un ZIP de PDFs si son varias.
+ * Convierte las cartas seleccionadas a PDF **en el navegador** (ver
+ * `cartasPdfClient.ts`). Devuelve un PDF si es una sola carta o un ZIP de PDFs
+ * si son varias. `onProgress(done, total)` permite mostrar el avance.
  */
 export async function generarPdf(
   templateBuf: ArrayBuffer,
-  rows: CartaRow[]
-): Promise<{ blob: Blob; filename: string; sheet?: string }> {
-  const docs = renderDocxFiles(templateBuf, rows);
-  const form = new FormData();
-  for (const d of docs) {
-    form.append("files", new Blob([d.bytes as unknown as BlobPart]), d.name);
+  rows: CartaRow[],
+  onProgress?: (done: number, total: number) => void
+): Promise<{ blob: Blob; filename: string }> {
+  const { docxToPdf } = await import("./cartasPdfClient");
+
+  if (rows.length === 1) {
+    onProgress?.(0, 1);
+    const blob = await docxToPdf(renderCarta(templateBuf, rows[0].values));
+    onProgress?.(1, 1);
+    return { blob, filename: `${nombreCarta(rows[0])}.pdf` };
   }
 
-  const res = await fetch("/api/cartas/pdf", { method: "POST", body: form });
-  if (!res.ok) {
-    let msg = "No se pudo convertir a PDF.";
-    let code = "pdf_error";
-    try {
-      const data = await res.json();
-      if (data?.error) msg = data.error;
-      if (data?.code) code = data.code;
-    } catch {
-      /* respuesta no JSON */
-    }
-    throw new PdfError(msg, code);
+  const zip = new JSZip();
+  const usados = new Map<string, number>();
+  for (let i = 0; i < rows.length; i++) {
+    onProgress?.(i, rows.length);
+    const pdf = await docxToPdf(renderCarta(templateBuf, rows[i].values));
+    let nombre = nombreCarta(rows[i]);
+    const previo = usados.get(nombre) ?? 0;
+    usados.set(nombre, previo + 1);
+    if (previo > 0) nombre = `${nombre}_${previo + 1}`;
+    zip.file(`${nombre}.pdf`, await pdf.arrayBuffer());
   }
-
-  const blob = await res.blob();
-  const single = docs.length === 1;
-  const filename = single
-    ? docs[0].name.replace(/\.docx$/i, ".pdf")
-    : "cartas_vacaciones.zip";
-  return { blob, filename };
+  onProgress?.(rows.length, rows.length);
+  return { blob: await zip.generateAsync({ type: "blob" }), filename: "cartas_vacaciones.zip" };
 }
 
 /** Dispara la descarga de un Blob en el navegador. */
