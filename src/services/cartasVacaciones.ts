@@ -126,6 +126,24 @@ function formatearFila(
 }
 
 /**
+ * Marcador {SALDO} de la carta: días restantes = DIAS_TIENE − DIAS_TOMA. No es
+ * una columna del Excel ni un campo obligatorio; se calcula a partir de los días
+ * (una celda vacía cuenta como 0). Devuelve "" si ninguno tiene valor o si alguno
+ * no es numérico. Lo usan tanto la lectura del Excel como el alta individual.
+ */
+export const CAMPO_SALDO = "SALDO";
+
+export function calcularSaldoDias(tiene: string, toma: string): string {
+  const t = (tiene ?? "").trim();
+  const m = (toma ?? "").trim();
+  if (!t && !m) return "";
+  const nt = t === "" ? 0 : Number(t.replace(",", "."));
+  const nm = m === "" ? 0 : Number(m.replace(",", "."));
+  if (!Number.isFinite(nt) || !Number.isFinite(nm)) return "";
+  return String(nt - nm);
+}
+
+/**
  * Texto del marcador {FECHACARTA} a partir del mes (1–12) y el año elegidos en
  * el módulo. P. ej. (6, 2026) → "junio de 2026" (mes en minúscula).
  */
@@ -200,7 +218,13 @@ export function extractSheet(wb: XLSX.WorkBook, sheetName: string): SheetData {
     }
     const conservar = tieneColsIdentidad ? tieneIdentidad : tieneDatos;
     if (conservar) {
-      rows.push({ index: r, raw, values: formatearFila(raw, headers) });
+      const values = formatearFila(raw, headers);
+      // Si la hoja no trae una columna SALDO, lo derivamos de los días para que
+      // el marcador {SALDO} de la carta no quede en blanco.
+      if (!headers.includes(CAMPO_SALDO)) {
+        values[CAMPO_SALDO] = calcularSaldoDias(values["DIAS_TIENE"] ?? "", values["DIAS_TOMA"] ?? "");
+      }
+      rows.push({ index: r, raw, values });
     }
   }
 

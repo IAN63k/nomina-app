@@ -44,10 +44,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  CAMPO_SALDO,
   CartaRow,
   MARCADOR_FECHA,
   MESES_ES,
   SheetData,
+  calcularSaldoDias,
   cartaBlob,
   descargar,
   extractSheet,
@@ -240,8 +242,11 @@ export function CartasVacaciones() {
     [markers]
   );
 
+  // {SALDO} se deriva de los días (no necesita columna), así que no cuenta como
+  // marcador "sin columna" aunque la hoja no lo traiga.
   const missing = useMemo(
-    () => marcadoresSinColumna(marcadoresDatos, sheet.headers),
+    () =>
+      marcadoresSinColumna(marcadoresDatos, sheet.headers).filter((m) => m !== CAMPO_SALDO),
     [marcadoresDatos, sheet.headers]
   );
 
@@ -949,24 +954,9 @@ export function CartasVacaciones() {
   );
 }
 
-// Campo de ayuda del formulario individual: saldo de días = DIAS_TIENE −
-// DIAS_TOMA. No es un marcador de la plantilla (a menos que se agregue allí);
-// se precalcula y queda editable para poder ajustarlo a mano.
-const CAMPO_SALDO = "SALDO";
-
-/**
- * Calcula el saldo de días como DIAS_TIENE − DIAS_TOMA. Devuelve "" si ninguno
- * tiene valor o si alguno no es numérico; una celda vacía cuenta como 0.
- */
-function calcularSaldo(tiene: string, toma: string): string {
-  const t = (tiene ?? "").trim();
-  const m = (toma ?? "").trim();
-  if (!t && !m) return "";
-  const nt = t === "" ? 0 : Number(t.replace(",", "."));
-  const nm = m === "" ? 0 : Number(m.replace(",", "."));
-  if (!Number.isFinite(nt) || !Number.isFinite(nm)) return "";
-  return String(nt - nm);
-}
+// El saldo de días (DIAS_TIENE − DIAS_TOMA) se precalcula pero queda editable.
+// El cálculo y el nombre del campo viven en el servicio (CAMPO_SALDO,
+// calcularSaldoDias) para compartirse con la lectura del Excel.
 
 // Marcadores que conviene mostrar primero en el formulario; el resto va detrás
 // en el orden de la plantilla.
@@ -1063,7 +1053,7 @@ function PersonaFormBody({
     for (const m of markers) init[m] = row?.values[m] ?? "";
     // Saldo: usa el guardado o lo calcula a partir de los días.
     init[CAMPO_SALDO] =
-      row?.values[CAMPO_SALDO] ?? calcularSaldo(init["DIAS_TIENE"] ?? "", init["DIAS_TOMA"] ?? "");
+      row?.values[CAMPO_SALDO] ?? calcularSaldoDias(init["DIAS_TIENE"] ?? "", init["DIAS_TOMA"] ?? "");
     return init;
   });
 
@@ -1077,7 +1067,7 @@ function PersonaFormBody({
     setValues((prev) => {
       const next = { ...prev, [campo]: valor };
       if (!saldoManual && (campo === "DIAS_TIENE" || campo === "DIAS_TOMA")) {
-        next[CAMPO_SALDO] = calcularSaldo(next["DIAS_TIENE"] ?? "", next["DIAS_TOMA"] ?? "");
+        next[CAMPO_SALDO] = calcularSaldoDias(next["DIAS_TIENE"] ?? "", next["DIAS_TOMA"] ?? "");
       }
       return next;
     });
