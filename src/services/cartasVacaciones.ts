@@ -27,7 +27,14 @@ export const PLANTILLA_DEFECTO_URL = "/templates/carta_vacaciones.docx";
  */
 export const COLUMNAS_FECHA_CORTA = new Set(["PERIODO 1", "PERIODO 2"]);
 
-const MESES_ES = [
+/**
+ * Marcador especial que NO viene del Excel ni del formulario individual: lo
+ * ajusta el usuario desde el módulo (mes + año) y se inyecta en cada carta.
+ * Corresponde al encabezado "Santiago de Cali, {FECHACARTA}".
+ */
+export const MARCADOR_FECHA = "FECHACARTA";
+
+export const MESES_ES = [
   "",
   "enero",
   "febrero",
@@ -116,6 +123,14 @@ function formatearFila(
     out[h] = formatearValor(raw[h], COLUMNAS_FECHA_CORTA.has(h));
   }
   return out;
+}
+
+/**
+ * Texto del marcador {FECHACARTA} a partir del mes (1–12) y el año elegidos en
+ * el módulo. P. ej. (6, 2026) → "junio de 2026" (mes en minúscula).
+ */
+export function fechaCartaTexto(mes: number, anio: number): string {
+  return `${MESES_ES[mes] ?? ""} de ${anio}`;
 }
 
 /** Deja un texto seguro para usarlo como nombre de archivo. */
