@@ -43,6 +43,39 @@ function loadLibs(): Promise<Libs> {
   return libsPromise;
 }
 
+/**
+ * Renderiza un .docx para **previsualizarlo en pantalla** dentro de un iframe.
+ * Se usa un iframe (igual que en el PDF) para que el CSS global de la app no se
+ * filtre y la carta se vea fiel (encabezado, firma en línea y pie). docx-preview
+ * dibuja sus propias páginas con sombra sobre fondo gris (inWrapper).
+ */
+export async function renderDocxInIframe(
+  docx: Uint8Array,
+  iframe: HTMLIFrameElement
+): Promise<void> {
+  const { renderAsync } = await loadLibs();
+
+  const idoc = iframe.contentDocument;
+  if (!idoc) throw new Error("No se pudo acceder al marco de previsualización.");
+
+  idoc.open();
+  idoc.write(
+    '<!DOCTYPE html><html><head><meta charset="utf-8"></head>' +
+      '<body style="margin:0;background:#f1f5f9;color:#000000;"></body></html>'
+  );
+  idoc.close();
+
+  await renderAsync(new Blob([docx as unknown as BlobPart]), idoc.body, undefined, {
+    inWrapper: true,
+    ignoreWidth: false,
+    ignoreHeight: false,
+    breakPages: true,
+    useBase64URL: true,
+  });
+
+  if (idoc.fonts?.ready) await idoc.fonts.ready;
+}
+
 /** Convierte los bytes de un .docx en un Blob PDF, página a página. */
 export async function docxToPdf(docx: Uint8Array): Promise<Blob> {
   const { renderAsync, jsPDF, toCanvas } = await loadLibs();
