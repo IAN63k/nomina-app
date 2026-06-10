@@ -44,17 +44,23 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  AcumuladosMap,
   CAMPO_SALDO,
   CartaRow,
   MARCADOR_FECHA,
+  MARCADORES_CALCULADOS,
   MESES_ES,
   SheetData,
+  ValoresCarta,
   calcularSaldoDias,
   cartaBlob,
+  construirVacaciones,
   descargar,
+  extractAcumulados,
   extractSheet,
   extraerMarcadores,
   fechaCartaTexto,
+  fechaReferenciaCarta,
   fetchPlantillaDefecto,
   generarPdf,
   generarZip,
@@ -95,6 +101,10 @@ export function CartasVacaciones() {
   const [activeSheet, setActiveSheet] = useState<string>("");
   const [sheet, setSheet] = useState<SheetData>(EMPTY_SHEET);
   const [excelName, setExcelName] = useState<string | null>(null);
+  // Períodos acumulados por cédula (hoja "VAC ANUAL …", auto-detectada). Alimentan
+  // el cálculo de varios períodos / FIFO / compensados; vacío si el libro no la trae.
+  const acumulados = useRef<AcumuladosMap>(new Map());
+  const [tieneAcumulados, setTieneAcumulados] = useState(false);
 
   // Personas agregadas manualmente (sin Excel). Usan índices negativos para no
   // colisionar con las filas del Excel (que empiezan en 1).
@@ -160,6 +170,8 @@ export function CartasVacaciones() {
     try {
       const wb = readWorkbook(await file.arrayBuffer());
       workbook.current = wb;
+      acumulados.current = extractAcumulados(wb);
+      setTieneAcumulados(acumulados.current.size > 0);
       const names = listSheets(wb);
       setSheetNames(names);
       setExcelName(file.name);
@@ -228,17 +240,25 @@ export function CartasVacaciones() {
   // ¿La plantilla usa {FECHACARTA}? Solo entonces mostramos el selector de fecha.
   const usaFecha = markers.includes(MARCADOR_FECHA);
   const fechaCartaStr = fechaCartaTexto(mesCarta, anioCarta);
+  // Referencia para decidir qué períodos están causados (último día del mes/año).
+  const fechaRef = useMemo(
+    () => fechaReferenciaCarta(mesCarta, anioCarta),
+    [mesCarta, anioCarta]
+  );
 
-  // Inyecta {FECHACARTA} (valor del módulo) en cada fila antes de generar.
-  const conFecha = (rows: CartaRow[]): CartaRow[] =>
-    rows.map((r) => ({
-      ...r,
-      values: { ...r.values, [MARCADOR_FECHA]: fechaCartaStr },
-    }));
+  // Valores de render de una fila: datos del Excel/formulario + {FECHACARTA} (del
+  // módulo) + el bloque de vacaciones (períodos causados, FIFO y compensados)
+  // calculado contra los acumulados. Lo usan generar, vista previa y descarga.
+  const prepara = (row: CartaRow): ValoresCarta => ({
+    ...row.values,
+    [MARCADOR_FECHA]: fechaCartaStr,
+    ...construirVacaciones(row.values, acumulados.current, fechaRef),
+  });
 
-  // {FECHACARTA} no es un campo del Excel ni del formulario: se excluye de ambos.
+  // {FECHACARTA} y los marcadores calculados (bucle de períodos + resumen) no son
+  // campos del Excel ni del formulario: se excluyen de ambos.
   const marcadoresDatos = useMemo(
-    () => markers.filter((m) => m !== MARCADOR_FECHA),
+    () => markers.filter((m) => m !== MARCADOR_FECHA && !MARCADORES_CALCULADOS.has(m)),
     [markers]
   );
 
@@ -256,21 +276,25 @@ export function CartasVacaciones() {
     setPreviewTitle(
       `${v(row, "NOMBRE")} ${v(row, "APELLIDO")}`.trim() || `Fila ${row.index}`
     );
-    setPreviewDocx(
-      renderCarta(templateBuf.current, {
-        ...row.values,
-        [MARCADOR_FECHA]: fechaCartaStr,
-      })
-    );
+    setPreviewDocx(renderCarta(templateBuf.current, prepara(row)));
     setPreviewSeq((s) => s + 1);
   };
 
   // Previsualización de la plantilla en blanco: los marcadores quedan visibles
-  // ({NOMBRE}, {CARGO}…) y solo se aplica el mes elegido.
+  // ({NOMBRE}, {CARGO}…) y solo se aplica el mes elegido. Para el bloque de
+  // vacaciones se muestra un período de ejemplo con los marcadores literales.
   const previewPlantilla = () => {
     if (!templateBuf.current) return;
-    const vals: Record<string, string> = {};
-    for (const m of markers) vals[m] = m === MARCADOR_FECHA ? fechaCartaStr : `{${m}}`;
+    const vals: ValoresCarta = {};
+    for (const m of markers) {
+      if (MARCADORES_CALCULADOS.has(m)) continue;
+      vals[m] = m === MARCADOR_FECHA ? fechaCartaStr : `{${m}}`;
+    }
+    vals.PERIODOS = [{ INICIO: "{INICIO}", FIN: "{FIN}", DIAS: "{DIAS}" }];
+    vals.TOMA = "{TOMA}";
+    vals.COMPENSADOS = "{COMPENSADOS}";
+    vals.SALDO_FINAL = "{SALDO_FINAL}";
+    vals.HAY_COMPENSADOS = true;
     setPreviewTitle("Plantilla");
     setPreviewDocx(renderCarta(templateBuf.current, vals));
     setPreviewSeq((s) => s + 1);
@@ -336,18 +360,17 @@ export function CartasVacaciones() {
     setError(null);
     setPdfError(null);
     try {
-      // {FECHACARTA} se inyecta aquí: lo controla el módulo, no los datos base.
-      const filas = conFecha(rows);
+      // `prepara` inyecta {FECHACARTA} y el bloque de vacaciones por fila.
       if (fmt === "pdf") {
-        setPdfProgress({ done: 0, total: filas.length });
-        const { blob, filename } = await generarPdf(templateBuf.current, filas, (done, total) =>
+        setPdfProgress({ done: 0, total: rows.length });
+        const { blob, filename } = await generarPdf(templateBuf.current, rows, prepara, (done, total) =>
           setPdfProgress({ done, total })
         );
         descargar(blob, filename);
-      } else if (filas.length === 1) {
-        descargar(cartaBlob(templateBuf.current, filas[0]), `${nombreCarta(filas[0])}.docx`);
+      } else if (rows.length === 1) {
+        descargar(cartaBlob(templateBuf.current, prepara(rows[0])), `${nombreCarta(rows[0])}.docx`);
       } else {
-        const blob = await generarZip(templateBuf.current, filas);
+        const blob = await generarZip(templateBuf.current, rows, prepara);
         descargar(blob, `cartas_vacaciones_${activeSheet || "datos"}.zip`);
       }
     } catch (err) {
@@ -420,20 +443,24 @@ export function CartasVacaciones() {
                 <div className="flex flex-wrap gap-1.5">
                   {markers.map((m) => {
                     const esFecha = m === MARCADOR_FECHA;
-                    const falta = !esFecha && missing.includes(m);
+                    const esCalculado = MARCADORES_CALCULADOS.has(m);
+                    const informativo = esFecha || esCalculado;
+                    const falta = !informativo && missing.includes(m);
                     return (
                       <span
                         key={m}
                         title={
                           esFecha
                             ? "Se ajusta desde el módulo (no viene del Excel)"
-                            : falta
-                              ? "Sin columna con el mismo nombre en el Excel"
-                              : "Vinculado a una columna del Excel"
+                            : esCalculado
+                              ? "Lo calcula la app (períodos causados, FIFO y compensados)"
+                              : falta
+                                ? "Sin columna con el mismo nombre en el Excel"
+                                : "Vinculado a una columna del Excel"
                         }
                         className={cn(
                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-mono text-xs transition-colors",
-                          esFecha
+                          informativo
                             ? "border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400"
                             : falta
                               ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
@@ -571,7 +598,11 @@ export function CartasVacaciones() {
               </p>
               <p className="text-xs text-muted-foreground">
                 {excelName
-                  ? `${sheet.rows.length} fila(s) con datos en “${activeSheet}”`
+                  ? `${sheet.rows.length} fila(s) con datos en “${activeSheet}”${
+                      tieneAcumulados
+                        ? ` • ${acumulados.current.size} empleado(s) con períodos acumulados`
+                        : ""
+                    }`
                   : "Formatos .xlsx o .xls"}
               </p>
             </div>
