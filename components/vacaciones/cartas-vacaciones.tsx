@@ -15,6 +15,7 @@ import {
   ListChecks,
   Loader2,
   Pencil,
+  Plus,
   Search,
   Sparkles,
   Trash2,
@@ -52,7 +53,8 @@ import {
   MESES_ES,
   SheetData,
   ValoresCarta,
-  calcularSaldoDias,
+  VacacionesManual,
+  bloqueManual,
   cartaBlob,
   construirVacaciones,
   descargar,
@@ -211,17 +213,29 @@ export function CartasVacaciones() {
   };
 
   // Guarda los datos del formulario como una fila manual (alta o edición).
-  const savePersona = (values: Record<string, string>) => {
+  const savePersona = (values: Record<string, string>, vacaciones: VacacionesManual) => {
+    // Reflejar el resumen en las columnas de la tabla (la carta usa `vacaciones`).
+    const conResumen: Record<string, string> = { ...values, DIAS_TOMA: vacaciones.toma };
+    const periodos = vacaciones.periodos.filter((p) => p.INICIO || p.FIN || p.DIAS);
+    if (periodos.length) {
+      conResumen["PERIODO 1"] = periodos[0].INICIO;
+      conResumen["PERIODO 2"] = periodos[periodos.length - 1].FIN;
+    }
     if (formRow) {
       setManualRows((prev) =>
         prev.map((r) =>
-          r.index === formRow.index ? { ...r, raw: { ...values }, values } : r
+          r.index === formRow.index
+            ? { ...r, raw: { ...conResumen }, values: conResumen, vacaciones }
+            : r
         )
       );
     } else {
       manualSeq.current -= 1;
       const index = manualSeq.current;
-      setManualRows((prev) => [...prev, { index, raw: { ...values }, values }]);
+      setManualRows((prev) => [
+        ...prev,
+        { index, raw: { ...conResumen }, values: conResumen, vacaciones },
+      ]);
       setSelected((prev) => new Set(prev).add(index));
     }
     setFormOpen(false);
@@ -252,7 +266,10 @@ export function CartasVacaciones() {
   const prepara = (row: CartaRow): ValoresCarta => ({
     ...row.values,
     [MARCADOR_FECHA]: fechaCartaStr,
-    ...construirVacaciones(row.values, acumulados.current, fechaRef),
+    // Filas manuales: usan sus períodos capturados a mano; el resto, los acumulados.
+    ...(row.vacaciones
+      ? bloqueManual(row.vacaciones)
+      : construirVacaciones(row.values, acumulados.current, fechaRef)),
   });
 
   // {FECHACARTA} y los marcadores calculados (bucle de períodos + resumen) no son
@@ -985,25 +1002,19 @@ export function CartasVacaciones() {
   );
 }
 
-// El saldo de días (DIAS_TIENE − DIAS_TOMA) se precalcula pero queda editable.
-// El cálculo y el nombre del campo viven en el servicio (CAMPO_SALDO,
-// calcularSaldoDias) para compartirse con la lectura del Excel.
-
 // Marcadores que conviene mostrar primero en el formulario; el resto va detrás
-// en el orden de la plantilla.
+// en el orden de la plantilla. Los períodos/toma/compensados ya no son marcadores
+// (los maneja la sección de vacaciones), así que no figuran aquí.
 const ORDEN_CAMPOS = [
   "NOMBRE",
   "APELLIDO",
   "CEDULA",
   "CARGO",
   "SEDE",
-  "PERIODO 1",
-  "PERIODO 2",
   "SALIDA",
   "HASTA",
-  "DIAS_TOMA",
+  "REINTEGRO",
   "DIAS_TIENE",
-  CAMPO_SALDO,
 ];
 
 function ordenarCampos(markers: string[]): string[] {
@@ -1017,9 +1028,26 @@ function ordenarCampos(markers: string[]): string[] {
   });
 }
 
+const PERIODO_VACIO = { INICIO: "", FIN: "", DIAS: "" };
+
+/** Suma de días − toma − compensados, como texto (vacío si nada que mostrar). */
+function saldoVacaciones(
+  periodos: VacacionesManual["periodos"],
+  toma: string,
+  compensados: string
+): string {
+  const num = (s: string) => {
+    const n = Number((s ?? "").trim().replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const pool = periodos.reduce((s, p) => s + num(p.DIAS), 0);
+  return String(pool - num(toma) - num(compensados));
+}
+
 /**
- * Formulario lateral para registrar (o editar) una persona a mano. Los campos
- * se derivan de los marcadores de la plantilla, así la carta queda completa.
+ * Formulario lateral para registrar (o editar) una persona a mano. Los datos
+ * de identidad salen de los marcadores de la plantilla; las vacaciones (varios
+ * períodos, días a tomar y compensados) tienen su propia sección.
  */
 function PersonaForm({
   open,
@@ -1031,7 +1059,7 @@ function PersonaForm({
   open: boolean;
   markers: string[];
   row: CartaRow | null;
-  onSave: (values: Record<string, string>) => void;
+  onSave: (values: Record<string, string>, vacaciones: VacacionesManual) => void;
   onClose: () => void;
 }) {
   return (
@@ -1040,8 +1068,8 @@ function PersonaForm({
         <SheetHeader className="border-b">
           <SheetTitle>{row ? "Editar persona" : "Agregar persona"}</SheetTitle>
           <SheetDescription>
-            Completa los datos de la carta. Cada campo corresponde a un marcador de
-            la plantilla; los que dejes en blanco saldrán vacíos.
+            Completa los datos y los períodos de vacaciones. La carta admite varios
+            períodos y días compensados; el saldo se calcula solo.
           </SheetDescription>
         </SheetHeader>
 
@@ -1069,91 +1097,167 @@ function PersonaFormBody({
 }: {
   markers: string[];
   row: CartaRow | null;
-  onSave: (values: Record<string, string>) => void;
+  onSave: (values: Record<string, string>, vacaciones: VacacionesManual) => void;
   onClose: () => void;
 }) {
-  // El saldo es un campo extra del formulario; si la plantilla ya lo trae como
-  // marcador, se respeta su posición y no se duplica.
-  const campos = useMemo(
-    () => ordenarCampos(markers.includes(CAMPO_SALDO) ? markers : [...markers, CAMPO_SALDO]),
-    [markers]
-  );
+  const campos = useMemo(() => ordenarCampos(markers), [markers]);
 
   const [values, setValues] = useState<Record<string, string>>(() => {
     const init: Record<string, string> = {};
     for (const m of markers) init[m] = row?.values[m] ?? "";
-    // Saldo: usa el guardado o lo calcula a partir de los días.
-    init[CAMPO_SALDO] =
-      row?.values[CAMPO_SALDO] ?? calcularSaldoDias(init["DIAS_TIENE"] ?? "", init["DIAS_TOMA"] ?? "");
     return init;
   });
 
-  // Mientras el usuario no edite el saldo a mano, se mantiene sincronizado con
-  // DIAS_TIENE − DIAS_TOMA. Al editarlo, deja de recalcularse solo.
-  const [saldoManual, setSaldoManual] = useState(() =>
-    Boolean((row?.values[CAMPO_SALDO] ?? "").trim())
+  // Vacaciones: períodos repetibles + días a tomar + compensados.
+  const [periodos, setPeriodos] = useState<VacacionesManual["periodos"]>(
+    () => row?.vacaciones?.periodos.map((p) => ({ ...p })) ?? [{ ...PERIODO_VACIO }]
   );
+  const [toma, setToma] = useState(() => row?.vacaciones?.toma ?? "");
+  const [compensados, setCompensados] = useState(() => row?.vacaciones?.compensados ?? "");
 
   const setField = (campo: string, valor: string) =>
-    setValues((prev) => {
-      const next = { ...prev, [campo]: valor };
-      if (!saldoManual && (campo === "DIAS_TIENE" || campo === "DIAS_TOMA")) {
-        next[CAMPO_SALDO] = calcularSaldoDias(next["DIAS_TIENE"] ?? "", next["DIAS_TOMA"] ?? "");
-      }
-      return next;
-    });
+    setValues((prev) => ({ ...prev, [campo]: valor }));
 
-  const setSaldo = (valor: string) => {
-    setSaldoManual(true);
-    setValues((prev) => ({ ...prev, [CAMPO_SALDO]: valor }));
-  };
+  const setPeriodo = (i: number, clave: keyof typeof PERIODO_VACIO, valor: string) =>
+    setPeriodos((prev) => prev.map((p, j) => (j === i ? { ...p, [clave]: valor } : p)));
+  const addPeriodo = () => setPeriodos((prev) => [...prev, { ...PERIODO_VACIO }]);
+  const removePeriodo = (i: number) =>
+    setPeriodos((prev) => (prev.length > 1 ? prev.filter((_, j) => j !== i) : prev));
 
-  const algunDato = Object.values(values).some((v) => v.trim() !== "");
+  const saldo = saldoVacaciones(periodos, toma, compensados);
+  const periodosConDato = periodos.filter((p) => p.INICIO || p.FIN || p.DIAS);
+  const algunDato =
+    Object.values(values).some((v) => v.trim() !== "") ||
+    periodosConDato.length > 0 ||
+    toma.trim() !== "" ||
+    compensados.trim() !== "";
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!algunDato) return;
-    // Normaliza: recorta espacios en cada campo.
     const limpio: Record<string, string> = {};
     for (const campo of campos) limpio[campo] = (values[campo] ?? "").trim();
-    onSave(limpio);
+    const vacaciones: VacacionesManual = {
+      periodos: periodosConDato.map((p) => ({
+        INICIO: p.INICIO.trim(),
+        FIN: p.FIN.trim(),
+        DIAS: p.DIAS.trim(),
+      })),
+      toma: toma.trim(),
+      compensados: compensados.trim(),
+    };
+    onSave(limpio, vacaciones);
   };
 
   return (
     <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        {campos.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            La plantilla no tiene marcadores, no hay campos para completar.
-          </p>
-        ) : (
+      <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-4">
+        {campos.length > 0 && (
           <div className="flex flex-col gap-4">
-            {campos.map((campo) => {
-              const esSaldo = campo === CAMPO_SALDO;
-              return (
-                <div key={campo} className="flex flex-col gap-1.5">
-                  <Label htmlFor={`campo-${campo}`} className="font-mono text-xs">
-                    {campo}
-                  </Label>
-                  <Input
-                    id={`campo-${campo}`}
-                    value={values[campo] ?? ""}
-                    onChange={(e) =>
-                      esSaldo ? setSaldo(e.target.value) : setField(campo, e.target.value)
-                    }
-                    inputMode={esSaldo ? "numeric" : undefined}
-                    autoComplete="off"
-                  />
-                  {esSaldo && (
-                    <p className="text-xs text-muted-foreground">
-                      Calculado como DIAS_TIENE − DIAS_TOMA. Puedes ajustarlo.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+            {campos.map((campo) => (
+              <div key={campo} className="flex flex-col gap-1.5">
+                <Label htmlFor={`campo-${campo}`} className="font-mono text-xs">
+                  {campo}
+                </Label>
+                <Input
+                  id={`campo-${campo}`}
+                  value={values[campo] ?? ""}
+                  onChange={(e) => setField(campo, e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+            ))}
           </div>
         )}
+
+        {/* Sección de vacaciones: períodos + toma + compensados + saldo. */}
+        <div className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Períodos de vacaciones</span>
+            <Button type="button" variant="outline" size="sm" onClick={addPeriodo}>
+              <Plus className="h-4 w-4" />
+              Período
+            </Button>
+          </div>
+
+          {periodos.map((p, i) => (
+            <div key={i} className="flex items-end gap-2">
+              <div className="flex flex-1 flex-col gap-1.5">
+                {i === 0 && <span className="text-xs text-muted-foreground">Inicio</span>}
+                <Input
+                  placeholder="dd/mm/aaaa"
+                  value={p.INICIO}
+                  onChange={(e) => setPeriodo(i, "INICIO", e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-1.5">
+                {i === 0 && <span className="text-xs text-muted-foreground">Fin</span>}
+                <Input
+                  placeholder="dd/mm/aaaa"
+                  value={p.FIN}
+                  onChange={(e) => setPeriodo(i, "FIN", e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex w-16 flex-col gap-1.5">
+                {i === 0 && <span className="text-xs text-muted-foreground">Días</span>}
+                <Input
+                  inputMode="numeric"
+                  value={p.DIAS}
+                  onChange={(e) => setPeriodo(i, "DIAS", e.target.value)}
+                  autoComplete="off"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                title="Quitar período"
+                onClick={() => removePeriodo(i)}
+                disabled={periodos.length === 1}
+                className="mb-0.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="campo-toma" className="text-xs">
+                Días a tomar
+              </Label>
+              <Input
+                id="campo-toma"
+                inputMode="numeric"
+                value={toma}
+                onChange={(e) => setToma(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="campo-compensados" className="text-xs">
+                Días compensados
+              </Label>
+              <Input
+                id="campo-compensados"
+                inputMode="numeric"
+                value={compensados}
+                onChange={(e) => setCompensados(e.target.value)}
+                autoComplete="off"
+              />
+            </div>
+          </div>
+
+          <p className="text-sm">
+            Saldo:{" "}
+            <span className="font-semibold text-foreground">{saldo} días</span>
+            <span className="ml-1 text-xs text-muted-foreground">
+              (Σ días − toma − compensados)
+            </span>
+          </p>
+        </div>
       </div>
 
       <SheetFooter className="flex-row justify-end gap-2 border-t">
