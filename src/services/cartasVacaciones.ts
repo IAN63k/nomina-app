@@ -70,6 +70,19 @@ export type CartaRow = {
   raw: Record<string, unknown>;
   /** Valores ya formateados como texto, listos para la carta. */
   values: Record<string, string>;
+  /**
+   * Vacaciones capturadas a mano (solo filas manuales). Cuando está presente,
+   * el bloque de la carta se arma con estos períodos en vez de buscarlos en la
+   * hoja de acumulados; permite varios períodos y días compensados sin Excel.
+   */
+  vacaciones?: VacacionesManual;
+};
+
+/** Vacaciones de una persona agregada manualmente: períodos + toma + compensados. */
+export type VacacionesManual = {
+  periodos: { INICIO: string; FIN: string; DIAS: string }[];
+  toma: string;
+  compensados: string;
 };
 
 export type SheetData = {
@@ -371,24 +384,46 @@ export function fechaReferenciaCarta(mes: number, anio: number): Date {
   return new Date(anio, mes, 0);
 }
 
+/**
+ * Arma el bloque de vacaciones a partir de una lista de períodos ya resuelta y
+ * los días tomados/compensados. Es la pieza común a las tres fuentes (acumulados
+ * del Excel, fallback de un período y captura manual): saldo = Σ días − toma −
+ * compensados; la sección de compensados solo se activa si hay > 0.
+ */
+export function calcularBloqueVacaciones(
+  periodos: { INICIO: string; FIN: string; DIAS: string }[],
+  toma: number,
+  compensados: number
+): DatosVacaciones {
+  const pool = periodos.reduce((s, p) => s + aNumero(p.DIAS), 0);
+  return {
+    PERIODOS: periodos,
+    TOMA: String(toma),
+    COMPENSADOS: String(compensados),
+    SALDO_FINAL: String(pool - toma - compensados),
+    HAY_COMPENSADOS: compensados > 0,
+  };
+}
+
 /** Construye el bloque de un solo período a partir de los datos de la fila. */
 function bloqueFallback(values: Record<string, string>): DatosVacaciones {
-  const toma = aNumero(values["DIAS_TOMA"]);
-  const comp = aNumero(values["COMPENSADAS"]);
-  const tiene = aNumero(values["DIAS_TIENE"]);
-  return {
-    PERIODOS: [
+  return calcularBloqueVacaciones(
+    [
       {
         INICIO: values["PERIODO 1"] ?? "",
         FIN: values["PERIODO 2"] ?? "",
         DIAS: values["DIAS_TIENE"] ?? "",
       },
     ],
-    TOMA: String(toma),
-    COMPENSADOS: String(comp),
-    SALDO_FINAL: String(tiene - toma - comp),
-    HAY_COMPENSADOS: comp > 0,
-  };
+    aNumero(values["DIAS_TOMA"]),
+    aNumero(values["COMPENSADAS"])
+  );
+}
+
+/** Bloque de vacaciones de una fila manual (períodos capturados a mano). */
+export function bloqueManual(vac: VacacionesManual): DatosVacaciones {
+  const periodos = vac.periodos.filter((p) => p.INICIO || p.FIN || p.DIAS);
+  return calcularBloqueVacaciones(periodos, aNumero(vac.toma), aNumero(vac.compensados));
 }
 
 /**
@@ -414,21 +449,15 @@ export function construirVacaciones(
 
   if (causados.length === 0) return bloqueFallback(values);
 
-  const toma = aNumero(values["DIAS_TOMA"]);
-  const comp = aNumero(values["COMPENSADAS"]);
-  const pool = causados.reduce((s, p) => s + p.dias, 0);
-
-  return {
-    PERIODOS: causados.map((p) => ({
+  return calcularBloqueVacaciones(
+    causados.map((p) => ({
       INICIO: formatearValor(p.inicio, true),
       FIN: formatearValor(p.fin, true),
       DIAS: String(p.dias),
     })),
-    TOMA: String(toma),
-    COMPENSADOS: String(comp),
-    SALDO_FINAL: String(pool - toma - comp),
-    HAY_COMPENSADOS: comp > 0,
-  };
+    aNumero(values["DIAS_TOMA"]),
+    aNumero(values["COMPENSADAS"])
+  );
 }
 
 // --- Plantilla y generación de cartas ---------------------------------------
