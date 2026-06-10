@@ -77,6 +77,47 @@ export type SheetData = {
   rows: CartaRow[];
 };
 
+/** Un período anual de vacaciones causado, leído de la hoja de acumulados. */
+export type Periodo = {
+  inicio: Date;
+  fin: Date;
+  /** Días acumulados (saldo causado) de ese período. */
+  dias: number;
+};
+
+/** Períodos acumulados por empleado, indexados por cédula normalizada. */
+export type AcumuladosMap = Map<string, Periodo[]>;
+
+/**
+ * Bloque de vacaciones que se inyecta en la carta: la lista de períodos
+ * causados (para el bucle {#PERIODOS}) más el resumen Toma/Compensados/Saldo.
+ * Los valores van como texto listo para la plantilla; `HAY_COMPENSADOS` es un
+ * booleano que activa la sección {#HAY_COMPENSADOS}.
+ */
+export type DatosVacaciones = {
+  PERIODOS: { INICIO: string; FIN: string; DIAS: string }[];
+  TOMA: string;
+  COMPENSADOS: string;
+  SALDO_FINAL: string;
+  HAY_COMPENSADOS: boolean;
+};
+
+/**
+ * Marcadores que NO provienen de una columna del Excel: los calcula el motor de
+ * vacaciones (bucle de períodos + resumen). Se excluyen del aviso "sin columna"
+ * y del formulario manual, igual que {SALDO} y {FECHACARTA}.
+ */
+export const MARCADORES_CALCULADOS = new Set([
+  "PERIODOS",
+  "INICIO",
+  "FIN",
+  "DIAS",
+  "TOMA",
+  "COMPENSADOS",
+  "SALDO_FINAL",
+  "HAY_COMPENSADOS",
+]);
+
 // --- Utilidades de formato ---------------------------------------------------
 
 /** Indica si un valor de celda debe considerarse vacío. */
@@ -231,6 +272,165 @@ export function extractSheet(wb: XLSX.WorkBook, sheetName: string): SheetData {
   return { headers, rows };
 }
 
+// --- Vacaciones: períodos acumulados y resumen ------------------------------
+
+/** Normaliza un encabezado para comparar sin acentos, mayúsculas ni puntos. */
+function normHeader(h: string): string {
+  return h
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[.\s]+/g, " ")
+    .trim();
+}
+
+/** Deja una cédula en solo dígitos para cruzar las dos hojas con seguridad. */
+export function normalizarCedula(valor: unknown): string {
+  return String(valor ?? "").replace(/\D/g, "");
+}
+
+/** Convierte un texto en número (admite coma decimal); vacío o inválido → 0. */
+function aNumero(valor: unknown): number {
+  const t = String(valor ?? "").trim();
+  if (!t) return 0;
+  const n = Number(t.replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Localiza en el libro la hoja de períodos acumulados (tipo "VAC ANUAL …") por
+ * sus columnas —Id. Empleado, Fecha Inicial, Fecha Final, Acumulado Días— sin
+ * depender del nombre exacto de la hoja. Devuelve su nombre o null si no existe.
+ */
+export function detectarHojaAcumulados(wb: XLSX.WorkBook): string | null {
+  for (const name of wb.SheetNames) {
+    const ws = wb.Sheets[name];
+    if (!ws) continue;
+    const fila = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 })[0];
+    if (!fila) continue;
+    const headers = (fila as unknown[]).map((h) => normHeader(String(h ?? "")));
+    const tieneId = headers.some((h) => h.includes("emplead") || h.includes("identificac"));
+    const tieneIni = headers.some((h) => h.includes("fecha") && (h.includes("inicial") || h.includes("inicio")));
+    const tieneFin = headers.some((h) => h.includes("fecha") && (h.includes("final") || h === "fecha fin"));
+    const tieneAcum = headers.some((h) => h.includes("acumulado"));
+    if (tieneId && tieneIni && tieneFin && tieneAcum) return name;
+  }
+  return null;
+}
+
+/**
+ * Lee la hoja de acumulados (auto-detectada) y agrupa los períodos por cédula,
+ * ordenados del más antiguo al más reciente (necesario para el consumo FIFO).
+ * Devuelve un mapa vacío si el libro no trae esa hoja.
+ */
+export function extractAcumulados(wb: XLSX.WorkBook): AcumuladosMap {
+  const map: AcumuladosMap = new Map();
+  const sheetName = detectarHojaAcumulados(wb);
+  if (!sheetName) return map;
+
+  const ws = wb.Sheets[sheetName];
+  const matrix = XLSX.utils.sheet_to_json<unknown[]>(ws, {
+    header: 1,
+    blankrows: false,
+    defval: null,
+  });
+  if (matrix.length === 0) return map;
+
+  const headers = (matrix[0] as unknown[]).map((h) => normHeader(String(h ?? "")));
+  const idx = (pred: (h: string) => boolean) => headers.findIndex(pred);
+  const iId = idx((h) => h.includes("emplead") || h.includes("identificac"));
+  const iIni = idx((h) => h.includes("fecha") && (h.includes("inicial") || h.includes("inicio")));
+  const iFin = idx((h) => h.includes("fecha") && (h.includes("final") || h === "fecha fin"));
+  const iAcum = idx((h) => h.includes("acumulado"));
+  if (iId < 0 || iIni < 0 || iFin < 0 || iAcum < 0) return map;
+
+  for (let r = 1; r < matrix.length; r++) {
+    const arr = matrix[r] as unknown[];
+    const cedula = normalizarCedula(arr[iId]);
+    const inicio = arr[iIni];
+    const fin = arr[iFin];
+    if (!cedula || !(inicio instanceof Date) || !(fin instanceof Date)) continue;
+    const periodo: Periodo = { inicio, fin, dias: aNumero(arr[iAcum]) };
+    const lista = map.get(cedula);
+    if (lista) lista.push(periodo);
+    else map.set(cedula, [periodo]);
+  }
+
+  for (const lista of map.values()) {
+    lista.sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  }
+  return map;
+}
+
+/**
+ * Fecha de referencia para decidir qué períodos están causados: el último día
+ * del mes/año elegido en el módulo para la carta. Un período se considera
+ * causado si su fecha fin no supera esta fecha.
+ */
+export function fechaReferenciaCarta(mes: number, anio: number): Date {
+  return new Date(anio, mes, 0);
+}
+
+/** Construye el bloque de un solo período a partir de los datos de la fila. */
+function bloqueFallback(values: Record<string, string>): DatosVacaciones {
+  const toma = aNumero(values["DIAS_TOMA"]);
+  const comp = aNumero(values["COMPENSADAS"]);
+  const tiene = aNumero(values["DIAS_TIENE"]);
+  return {
+    PERIODOS: [
+      {
+        INICIO: values["PERIODO 1"] ?? "",
+        FIN: values["PERIODO 2"] ?? "",
+        DIAS: values["DIAS_TIENE"] ?? "",
+      },
+    ],
+    TOMA: String(toma),
+    COMPENSADOS: String(comp),
+    SALDO_FINAL: String(tiene - toma - comp),
+    HAY_COMPENSADOS: comp > 0,
+  };
+}
+
+/**
+ * Calcula el bloque de vacaciones de una fila combinando su solicitud
+ * (DIAS_TOMA, COMPENSADAS) con los períodos acumulados de la cédula.
+ *
+ * - Solo se incluyen los períodos **causados** (fin ≤ `fechaRef`) con saldo > 0,
+ *   ordenados del más antiguo al más reciente.
+ * - El saldo final es la suma de los días causados menos lo tomado y compensado
+ *   (el consumo FIFO arranca por el período más antiguo; el siguiente período se
+ *   usa automáticamente cuando el anterior se agota).
+ * - Si la cédula no está en la hoja de acumulados (o no tiene períodos causados)
+ *   se mantiene el comportamiento actual: un único período desde PROGRAMACION.
+ */
+export function construirVacaciones(
+  values: Record<string, string>,
+  acumulados: AcumuladosMap,
+  fechaRef: Date
+): DatosVacaciones {
+  const cedula = normalizarCedula(values["CEDULA"]);
+  const periodos = (cedula && acumulados.get(cedula)) || [];
+  const causados = periodos.filter((p) => p.fin.getTime() <= fechaRef.getTime() && p.dias > 0);
+
+  if (causados.length === 0) return bloqueFallback(values);
+
+  const toma = aNumero(values["DIAS_TOMA"]);
+  const comp = aNumero(values["COMPENSADAS"]);
+  const pool = causados.reduce((s, p) => s + p.dias, 0);
+
+  return {
+    PERIODOS: causados.map((p) => ({
+      INICIO: formatearValor(p.inicio, true),
+      FIN: formatearValor(p.fin, true),
+      DIAS: String(p.dias),
+    })),
+    TOMA: String(toma),
+    COMPENSADOS: String(comp),
+    SALDO_FINAL: String(pool - toma - comp),
+    HAY_COMPENSADOS: comp > 0,
+  };
+}
+
 // --- Plantilla y generación de cartas ---------------------------------------
 
 export async function fetchPlantillaDefecto(): Promise<ArrayBuffer> {
@@ -250,19 +450,27 @@ const DOCX_OPTIONS = {
   delimiters: { start: "{", end: "}" },
   parser: (tag: string) => ({
     get: (scope: Record<string, unknown> | null) =>
-      scope ? scope[tag] : undefined,
+      tag === "." ? scope : scope ? scope[tag] : undefined,
   }),
   nullGetter: () => "",
 };
 
-/** Devuelve los marcadores {ENTRE_LLAVES} presentes en la plantilla. */
+/** Valores de render: texto plano más el bloque de vacaciones (array/booleanos). */
+export type ValoresCarta = Record<string, unknown>;
+
+/**
+ * Devuelve los marcadores {ENTRE_LLAVES} presentes en la plantilla. Se quitan
+ * los prefijos de sección/bucle (`#`, `/`, `^`) para que {#PERIODOS} y
+ * {/PERIODOS} aparezcan una sola vez como "PERIODOS".
+ */
 export function extraerMarcadores(templateBuf: ArrayBuffer): string[] {
   const zip = new PizZip(templateBuf);
   const doc = new Docxtemplater(zip, DOCX_OPTIONS);
   const texto = doc.getFullText();
   const set = new Set<string>();
   for (const match of texto.matchAll(/\{([^{}]+)\}/g)) {
-    set.add(match[1]);
+    const tag = match[1].trim().replace(/^[#/^]/, "");
+    if (tag) set.add(tag);
   }
   return [...set].sort();
 }
@@ -279,7 +487,7 @@ export function marcadoresSinColumna(
 /** Renderiza una carta a partir de los valores de una fila. */
 export function renderCarta(
   templateBuf: ArrayBuffer,
-  values: Record<string, string>
+  values: ValoresCarta
 ): Uint8Array {
   const zip = new PizZip(templateBuf);
   const doc = new Docxtemplater(zip, DOCX_OPTIONS);
@@ -295,15 +503,20 @@ export function nombreCarta(row: CartaRow): string {
   return limpiarNombreArchivo(partes || `fila_${row.index}`);
 }
 
-export function cartaBlob(templateBuf: ArrayBuffer, row: CartaRow): Blob {
-  const bytes = renderCarta(templateBuf, row.values);
+export function cartaBlob(templateBuf: ArrayBuffer, values: ValoresCarta): Blob {
+  const bytes = renderCarta(templateBuf, values);
   return new Blob([bytes as unknown as BlobPart], { type: MIME_DOCX });
 }
 
-/** Genera un ZIP con una carta .docx por cada fila indicada. */
+/**
+ * Genera un ZIP con una carta .docx por cada fila. `prepara` arma los valores de
+ * render de cada fila (datos + {FECHACARTA} + bloque de vacaciones); así la
+ * lógica de períodos vive en el módulo, que conoce los acumulados y la fecha.
+ */
 export async function generarZip(
   templateBuf: ArrayBuffer,
-  rows: CartaRow[]
+  rows: CartaRow[],
+  prepara: (row: CartaRow) => ValoresCarta
 ): Promise<Blob> {
   const zip = new JSZip();
   const usados = new Map<string, number>();
@@ -313,7 +526,7 @@ export async function generarZip(
     const previo = usados.get(nombre) ?? 0;
     usados.set(nombre, previo + 1);
     if (previo > 0) nombre = `${nombre}_${previo + 1}`;
-    zip.file(`${nombre}.docx`, renderCarta(templateBuf, row.values));
+    zip.file(`${nombre}.docx`, renderCarta(templateBuf, prepara(row)));
   }
 
   return zip.generateAsync({ type: "blob" });
@@ -327,13 +540,14 @@ export async function generarZip(
 export async function generarPdf(
   templateBuf: ArrayBuffer,
   rows: CartaRow[],
+  prepara: (row: CartaRow) => ValoresCarta,
   onProgress?: (done: number, total: number) => void
 ): Promise<{ blob: Blob; filename: string }> {
   const { docxToPdf } = await import("./cartasPdfClient");
 
   if (rows.length === 1) {
     onProgress?.(0, 1);
-    const blob = await docxToPdf(renderCarta(templateBuf, rows[0].values));
+    const blob = await docxToPdf(renderCarta(templateBuf, prepara(rows[0])));
     onProgress?.(1, 1);
     return { blob, filename: `${nombreCarta(rows[0])}.pdf` };
   }
@@ -342,7 +556,7 @@ export async function generarPdf(
   const usados = new Map<string, number>();
   for (let i = 0; i < rows.length; i++) {
     onProgress?.(i, rows.length);
-    const pdf = await docxToPdf(renderCarta(templateBuf, rows[i].values));
+    const pdf = await docxToPdf(renderCarta(templateBuf, prepara(rows[i])));
     let nombre = nombreCarta(rows[i]);
     const previo = usados.get(nombre) ?? 0;
     usados.set(nombre, previo + 1);
