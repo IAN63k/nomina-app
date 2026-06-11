@@ -734,7 +734,49 @@ export const buildTurnoRows = (
     }
   }
 
-  return [...rowsByKey.values()]
+  const result = [...rowsByKey.values()]
+  // Solo en la vista de detalle: fusiona el "sobrante ordinario" mínimo que deja el
+  // tope semanal de 37h cuando cae dentro de la cola nocturna. Ese tramo (concepto
+  // 35/36 con recargo 0, ya consumido por el descuento nocturno) se mostraba como un
+  // micro‑horario confuso (p. ej. 00:00–00:22, −0.37). No afecta los totales ni el
+  // guardado (que usa splitByTimeRange=false): solo reubica horas/diferencia al tramo
+  // extra contiguo del mismo turno para una lectura limpia.
+  return splitByTimeRange ? mergeDiscountRemnants(result) : result
+}
+
+/**
+ * Fusiona el remanente ordinario nocturno totalmente descontado (recargo 0,
+ * diferencia < 0) con el tramo contiguo del mismo (medico, fecha) que empieza donde
+ * aquél termina —típicamente la hora extra que sigue tras el tope de 37h—. Conserva
+ * la suma de horas y de diferencia; el recargo del remanente es 0, así que ningún
+ * total cambia. Pensado solo para la presentación del detalle.
+ */
+const mergeDiscountRemnants = (rows: TurnoRow[]): TurnoRow[] => {
+  const removed = new Set<TurnoRow>()
+
+  for (const remnant of rows) {
+    if (removed.has(remnant)) continue
+    if (!NIGHT_RECARGO_CONCEPTOS.has(remnant.concepto)) continue
+    if (remnant.horasrecargo !== 0 || !(remnant.diferencia < 0)) continue
+    if (!remnant.entrada || !remnant.salida) continue
+
+    const target = rows.find(
+      (r) =>
+        r !== remnant &&
+        !removed.has(r) &&
+        r.medico === remnant.medico &&
+        r.fecha === remnant.fecha &&
+        r.entrada === remnant.salida
+    )
+    if (!target) continue
+
+    target.entrada = remnant.entrada
+    target.horas = Number((target.horas + remnant.horas).toFixed(2))
+    target.diferencia = Number((target.diferencia + remnant.diferencia).toFixed(2))
+    removed.add(remnant)
+  }
+
+  return removed.size ? rows.filter((r) => !removed.has(r)) : rows
 }
 
 /**
