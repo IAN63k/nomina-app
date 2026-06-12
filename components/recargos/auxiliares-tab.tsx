@@ -10,6 +10,7 @@ import { MonthTabs } from "@/src/components/MonthTabs"
 import { MallaDrawer } from "@/components/recargos/malla-drawer"
 import { CargaHorarios } from "@/components/recargos/carga-horarios"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
+import { ConceptosPorPersona } from "@/src/components/ConceptosPorPersona"
 import { ExportMenu } from "@/src/components/ExportMenu"
 import { useSchedule } from "@/src/hooks/useSchedule"
 import { usePeriodFilter } from "@/src/hooks/usePeriodFilter"
@@ -245,6 +246,9 @@ export function RecargosAuxiliaresTab() {
               </div>
               <TurnosDetailTable period={period} module="auxiliares" />
             </div>
+
+            {/* Totales de conceptos por persona */}
+            <ConceptosPorPersona period={period} nameLabel="Auxiliar" />
 
             {/* Resumen */}
             <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
