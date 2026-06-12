@@ -1,11 +1,21 @@
 "use client"
 
-import { useState, useMemo } from "react"
-import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { useMemo, useState } from "react"
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, Columns3, RotateCcw, Search } from "lucide-react"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
 import type { ShiftModule } from "@/src/constants/shiftColors"
 import type { PeriodFilter } from "@/src/hooks/usePeriodFilter"
+import { AUX_ABSENCE_CODES, AUX_SHIFT_DETAILS } from "@/src/constants/auxiliaresShifts"
 import { useAppearance } from "@/contexts/appearance-context"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 
 type Props = {
@@ -42,33 +52,102 @@ function formatDate(fecha: string) {
   return `${d}/${m}/${y}`
 }
 
+// ─── Ausentismos ──────────────────────────────────────────────────────────────────
+
+const MEDICOS_ABSENCE_LABELS: Record<string, string> = {
+  A: "Ausentismo",
+  L: "Libre",
+}
+
+const AUX_ABSENCE_LABELS: Record<string, string> = Object.fromEntries(
+  [...AUX_ABSENCE_CODES].map((code) => [code, AUX_SHIFT_DETAILS[code]?.label ?? code])
+)
+
+const AUSENTISMO_STYLES: Record<string, string> = {
+  Ausentismo: "bg-red-50 text-red-600 ring-red-200",
+  Incapacidad: "bg-red-50 text-red-600 ring-red-200",
+  Calamidad: "bg-orange-50 text-orange-600 ring-orange-200",
+  Vacaciones: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+}
+
+function ausentismoLabel(module: ShiftModule, row: TurnoMedicoRow): string {
+  const code = (row.turno_codigo ?? "").trim().toUpperCase()
+  if (!code) return ""
+  const labels = module === "auxiliares" ? AUX_ABSENCE_LABELS : MEDICOS_ABSENCE_LABELS
+  return labels[code] ?? ""
+}
+
+// ─── Valores derivados de la fila ─────────────────────────────────────────────────
+
+/** Horario COMPLETO del turno trabajado (catálogo), sin recortar al concepto. */
+function turnoTrabajadoOf(row: TurnoMedicoRow): string {
+  const entrada = row.turnoEntrada ?? row.entrada
+  const salida = row.turnoSalida ?? row.salida
+  return entrada && salida ? `${entrada} – ${salida}` : ""
+}
+
+/**
+ * Franjas exactas donde aplica el concepto de la fila (Desde/Hasta). El motor las
+ * calcula en `recargoRanges`; filas antiguas sin el campo caen al tramo entrada/salida.
+ */
+function recargoRangesOf(row: TurnoMedicoRow): Array<{ desde: string; hasta: string }> {
+  if (row.recargoRanges?.length) return row.recargoRanges
+  if (row.entrada && row.salida) return [{ desde: row.entrada, hasta: row.salida }]
+  return []
+}
+
+// ─── Columnas ─────────────────────────────────────────────────────────────────────
+
 type Column = {
   key: string
   label: string
   sortable?: boolean
   align?: "left" | "right" | "center"
+  /** Grupo en el menú "Columnas" (recognition over recall). */
+  group: string
+  /** Siempre visible: no aparece como toggle activo en el menú. */
+  lockVisible?: boolean
+  /** Oculta por defecto (recuperable desde el menú). */
+  defaultHidden?: boolean
 }
 
 const COLUMNS: Column[] = [
-  { key: "medico",       label: "Nombre",      sortable: true,  align: "left" },
-  { key: "documento",    label: "Cédula",       sortable: true,  align: "left" },
-  { key: "fecha",        label: "Fecha",        sortable: true,  align: "left" },
-  { key: "turno_codigo", label: "Dig. Turno",   sortable: true,  align: "center" },
-  { key: "_horario",     label: "Horario",      sortable: false, align: "center" },
-  { key: "entrada",      label: "Hora Inicio",  sortable: true,  align: "center" },
-  { key: "salida",       label: "Hora Fin",     sortable: true,  align: "center" },
-  { key: "concepto",     label: "Concepto",     sortable: true,  align: "left" },
-  { key: "horasrecargo", label: "Cantidad",     sortable: true,  align: "center" },
-  { key: "dia",          label: "Día",          sortable: true,  align: "center" },
-  // { key: "horas",        label: "Jornada",      sortable: true,  align: "center" },
-  { key: "diferencia",   label: "Diferencia",   sortable: true,  align: "center" },
+  { key: "medico",       label: "Nombre",          sortable: true,  align: "left",   group: "Identificación", lockVisible: true },
+  { key: "documento",    label: "Cédula",          sortable: true,  align: "left",   group: "Identificación" },
+  { key: "fecha",        label: "Fecha",           sortable: true,  align: "left",   group: "Identificación" },
+  { key: "turno_codigo", label: "Dig. Turno",      sortable: true,  align: "center", group: "Turno trabajado" },
+  { key: "_turno",       label: "Turno trabajado", sortable: true,  align: "center", group: "Turno trabajado" },
+  { key: "concepto",     label: "Concepto",        sortable: true,  align: "left",   group: "Recargos" },
+  { key: "_desde",       label: "Desde",           sortable: true,  align: "center", group: "Recargos" },
+  { key: "_hasta",       label: "Hasta",           sortable: true,  align: "center", group: "Recargos" },
+  { key: "horasrecargo", label: "Cantidad",        sortable: true,  align: "center", group: "Recargos" },
+  { key: "diferencia",   label: "Diferencia",      sortable: true,  align: "center", group: "Recargos", defaultHidden: true },
+  { key: "_ausentismo",  label: "Ausentismo",      sortable: true,  align: "center", group: "Ausentismos" },
+  { key: "dia",          label: "Día",             sortable: true,  align: "center", group: "Otros" },
 ]
 
-function getValue(row: TurnoMedicoRow, key: string): string | number {
-  if (key === "_horario") {
-    return row.entrada && row.salida ? `${row.entrada} – ${row.salida}` : ""
+const COLUMN_GROUPS = ["Identificación", "Turno trabajado", "Recargos", "Ausentismos", "Otros"]
+
+const defaultVisibility = (): Record<string, boolean> =>
+  Object.fromEntries(COLUMNS.map((c) => [c.key, !c.defaultHidden]))
+
+const visibilityStorageKey = (module: ShiftModule) => `nomina:recargos:detail-cols:${module}`
+
+function getValue(row: TurnoMedicoRow, key: string, module: ShiftModule): string | number {
+  switch (key) {
+    case "_turno":
+      return turnoTrabajadoOf(row)
+    case "_desde":
+      return recargoRangesOf(row)[0]?.desde ?? ""
+    case "_hasta": {
+      const ranges = recargoRangesOf(row)
+      return ranges[ranges.length - 1]?.hasta ?? ""
+    }
+    case "_ausentismo":
+      return ausentismoLabel(module, row)
+    default:
+      return (row as Record<string, unknown>)[key] as string | number ?? ""
   }
-  return (row as Record<string, unknown>)[key] as string | number ?? ""
 }
 
 export function TurnosDetailTable({ period, module = "medicos" }: Props) {
@@ -97,6 +176,52 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
   const [pageSize, setPageSize]           = useState(20)
   const [sortCol, setSortCol]             = useState<string>("fecha")
   const [sortDir, setSortDir]             = useState<SortDir>("asc")
+
+  // Visibilidad de columnas: preferencia persistida por módulo (flexibilidad y
+  // eficiencia de uso). Defaults: turno trabajado + recargos + ausentismos visibles.
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() => {
+    const defaults = defaultVisibility()
+    if (typeof window === "undefined") return defaults
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(visibilityStorageKey(module)) ?? "null")
+      return saved && typeof saved === "object" ? { ...defaults, ...saved } : defaults
+    } catch {
+      return defaults
+    }
+  })
+
+  const visibleColumns = COLUMNS.filter((c) => c.lockVisible || visibleCols[c.key] !== false)
+  const hiddenCount = COLUMNS.length - visibleColumns.length
+
+  const persistVisibility = (next: Record<string, boolean>) => {
+    setVisibleCols(next)
+    try {
+      window.localStorage.setItem(visibilityStorageKey(module), JSON.stringify(next))
+    } catch {
+      // localStorage no disponible: la preferencia vive solo en la sesión.
+    }
+  }
+
+  const toggleColumn = (key: string, visible: boolean) => {
+    persistVisibility({ ...visibleCols, [key]: visible })
+    // Una columna oculta no debe seguir filtrando "invisiblemente" (visibilidad del
+    // estado del sistema): al ocultarla se descarta su filtro y, si ordenaba, se
+    // vuelve al orden por fecha.
+    if (!visible) {
+      if (filters[key]?.trim()) {
+        setFilters((prev) => ({ ...prev, [key]: "" }))
+        setPage(1)
+      }
+      if (sortCol === key) {
+        setSortCol("fecha")
+        setSortDir("asc")
+      }
+    }
+  }
+
+  const resetColumns = () => {
+    persistVisibility(defaultVisibility())
+  }
 
   // Al cambiar el periodo o el mes dominante, volver a la primera página para no
   // quedar fuera de rango. Se ajusta durante el render (patrón recomendado de React)
@@ -134,18 +259,18 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
     for (const [key, val] of Object.entries(filters)) {
       if (!val.trim()) continue
       const q = val.trim().toLowerCase()
-      res = res.filter(r => String(getValue(r, key)).toLowerCase().includes(q))
+      res = res.filter(r => String(getValue(r, key, module)).toLowerCase().includes(q))
     }
 
     res.sort((a, b) => {
-      const av = getValue(a, sortCol)
-      const bv = getValue(b, sortCol)
+      const av = getValue(a, sortCol, module)
+      const bv = getValue(b, sortCol, module)
       const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
       return sortDir === "asc" ? cmp : -cmp
     })
 
     return res
-  }, [periodRows, search, filters, sortCol, sortDir])
+  }, [periodRows, search, filters, sortCol, sortDir, module])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage   = Math.min(page, totalPages)
@@ -154,6 +279,134 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
   const pageWindow = () => {
     const start = Math.max(1, Math.min(safePage - 2, totalPages - 4))
     return Array.from({ length: Math.min(5, totalPages) }, (_, i) => start + i).filter(p => p <= totalPages)
+  }
+
+  const renderCell = (row: TurnoMedicoRow, col: Column) => {
+    switch (col.key) {
+      case "medico":
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 font-medium text-foreground">
+            {row.medico}
+          </td>
+        )
+      case "documento":
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 font-mono text-xs text-foreground/70">
+            {row.documento ?? <span className="text-muted-foreground/40">—</span>}
+          </td>
+        )
+      case "fecha":
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 font-mono text-xs text-foreground/80">
+            {formatDate(row.fecha)}
+          </td>
+        )
+      case "turno_codigo": {
+        const shiftColors = row.turno_codigo ? colorOf(module, row.turno_codigo) : null
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center">
+            {row.turno_codigo && shiftColors ? (
+              <span
+                className="inline-flex h-6 min-w-6 items-center justify-center rounded border px-1 font-mono text-[11px] font-bold"
+                style={{ backgroundColor: shiftColors.bg, color: shiftColors.text, borderColor: shiftColors.border }}
+              >
+                {row.turno_codigo}
+              </span>
+            ) : <span className="text-muted-foreground/30">—</span>}
+          </td>
+        )
+      }
+      case "_turno": {
+        const turno = turnoTrabajadoOf(row)
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs text-foreground/70">
+            {turno || <span className="text-muted-foreground/30">—</span>}
+          </td>
+        )
+      }
+      case "concepto": {
+        const conceptoLabel = CONCEPTO_LABELS[row.concepto] ?? String(row.concepto)
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-xs text-foreground/80">
+            {row.concepto !== 0 ? (
+              <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-200">
+                {row.concepto} · {conceptoLabel}
+              </span>
+            ) : (
+              <span className="text-muted-foreground/40">—</span>
+            )}
+          </td>
+        )
+      }
+      case "_desde":
+      case "_hasta": {
+        // Rango EXACTO donde aplica el concepto (no el turno completo). Una fila puede
+        // tener varias franjas disjuntas (p. ej. nocturno 05:00–06:00 y 19:00–22:00):
+        // se listan una por línea, alineadas entre las celdas Desde y Hasta.
+        const ranges = recargoRangesOf(row)
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs text-foreground/70">
+            {ranges.length === 0
+              ? <span className="text-muted-foreground/30">—</span>
+              : ranges.map((r, idx) => (
+                  <div key={idx} className="leading-5">
+                    {col.key === "_desde" ? r.desde : r.hasta}
+                  </div>
+                ))
+            }
+          </td>
+        )
+      }
+      case "horasrecargo":
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
+            {row.horasrecargo > 0
+              ? <span className="font-semibold text-foreground">{row.horasrecargo}</span>
+              : <span className="text-muted-foreground/30">—</span>
+            }
+          </td>
+        )
+      case "diferencia":
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
+            {row.diferencia !== 0
+              ? <span className="text-orange-600">{row.diferencia}</span>
+              : <span className="text-muted-foreground/30">—</span>
+            }
+          </td>
+        )
+      case "_ausentismo": {
+        const label = ausentismoLabel(module, row)
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center">
+            {label ? (
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset ${
+                AUSENTISMO_STYLES[label] ?? "bg-muted text-muted-foreground ring-border"
+              }`}>
+                {label}
+              </span>
+            ) : <span className="text-muted-foreground/30">—</span>}
+          </td>
+        )
+      }
+      case "dia": {
+        const diaLabel = row.festivo ? "Festivo" : (DIA_LABELS[row.dia] ?? row.dia)
+        return (
+          <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center">
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              row.festivo ? "bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-200" :
+              row.dia === "D" ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200" :
+              row.dia === "S" ? "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200" :
+              "bg-muted text-muted-foreground ring-1 ring-inset ring-border"
+            }`}>
+              {diaLabel}
+            </span>
+          </td>
+        )
+      }
+      default:
+        return <td key={col.key} className="border-b border-border/50 px-3 py-2" />
+    }
   }
 
   return (
@@ -239,6 +492,56 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {/* Mostrar/ocultar columnas: preferencia persistida por módulo. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                <Columns3 className="h-3.5 w-3.5" />
+                Columnas
+                {hiddenCount > 0 && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                    {hiddenCount} ocultas
+                  </span>
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {COLUMN_GROUPS.map((group, gi) => {
+                const cols = COLUMNS.filter((c) => c.group === group)
+                if (!cols.length) return null
+                return (
+                  <div key={group}>
+                    {gi > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      {group}
+                    </DropdownMenuLabel>
+                    {cols.map((col) => (
+                      <DropdownMenuCheckboxItem
+                        key={col.key}
+                        checked={col.lockVisible || visibleCols[col.key] !== false}
+                        disabled={col.lockVisible}
+                        onCheckedChange={(checked) => toggleColumn(col.key, checked === true)}
+                        onSelect={(e) => e.preventDefault()}
+                      >
+                        {col.label}
+                        {col.lockVisible && (
+                          <span className="ml-auto text-[10px] text-muted-foreground/60">siempre</span>
+                        )}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </div>
+                )
+              })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={resetColumns} className="text-xs">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restablecer columnas
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <span className="tabular-nums">{filtered.length} registros</span>
           <select
             value={pageSize}
@@ -256,7 +559,7 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           <thead>
             {/* Header row */}
             <tr>
-              {COLUMNS.map(col => (
+              {visibleColumns.map(col => (
                 <th
                   key={col.key}
                   onClick={() => col.sortable && handleSort(col.key)}
@@ -281,7 +584,7 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
             </tr>
             {/* Filter row */}
             <tr>
-              {COLUMNS.map(col => (
+              {visibleColumns.map(col => (
                 <th key={`f-${col.key}`} className="border-b border-border bg-background px-2 py-1">
                   {col.sortable ? (
                     <input
@@ -300,15 +603,11 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           <tbody>
             {paged.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
                   No hay registros para mostrar.
                 </td>
               </tr>
             ) : paged.map((row, i) => {
-              const shiftColors = row.turno_codigo ? colorOf(module, row.turno_codigo) : null
-              const horario = row.entrada && row.salida ? `${row.entrada} – ${row.salida}` : "—"
-              const conceptoLabel = CONCEPTO_LABELS[row.concepto] ?? String(row.concepto)
-              const diaLabel = row.festivo ? "Festivo" : (DIA_LABELS[row.dia] ?? row.dia)
               const isEven = i % 2 === 0
 
               return (
@@ -316,80 +615,7 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
                   key={`${row.medico}-${row.fecha}-${i}`}
                   className={`group transition-colors hover:bg-primary/5 ${isEven ? "" : "bg-muted/[0.06]"}`}
                 >
-                  {/* Nombre */}
-                  <td className="border-b border-border/50 px-3 py-2 font-medium text-foreground">
-                    {row.medico}
-                  </td>
-                  {/* Cédula */}
-                  <td className="border-b border-border/50 px-3 py-2 font-mono text-xs text-foreground/70">
-                    {row.documento ?? <span className="text-muted-foreground/40">—</span>}
-                  </td>
-                  {/* Fecha */}
-                  <td className="border-b border-border/50 px-3 py-2 font-mono text-xs text-foreground/80">
-                    {formatDate(row.fecha)}
-                  </td>
-                  {/* Dig. Turno */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center">
-                    {row.turno_codigo && shiftColors ? (
-                      <span
-                        className="inline-flex h-6 w-6 items-center justify-center rounded border font-mono text-[11px] font-bold"
-                        style={{ backgroundColor: shiftColors.bg, color: shiftColors.text, borderColor: shiftColors.border }}
-                      >
-                        {row.turno_codigo}
-                      </span>
-                    ) : <span className="text-muted-foreground/30">—</span>}
-                  </td>
-                  {/* Horario */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs text-foreground/70">
-                    {horario}
-                  </td>
-                  {/* Hora Inicio */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs text-foreground/70">
-                    {row.entrada ?? <span className="text-muted-foreground/30">—</span>}
-                  </td>
-                  {/* Hora Fin */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs text-foreground/70">
-                    {row.salida ?? <span className="text-muted-foreground/30">—</span>}
-                  </td>
-                  {/* Concepto */}
-                  <td className="border-b border-border/50 px-3 py-2 text-xs text-foreground/80">
-                    {row.concepto !== 0 ? (
-                      <span className="inline-flex items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-200">
-                        {row.concepto} · {conceptoLabel}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground/40">—</span>
-                    )}
-                  </td>
-                  {/* Cantidad (horasrecargo) */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
-                    {row.horasrecargo > 0
-                      ? <span className="font-semibold text-foreground">{row.horasrecargo}</span>
-                      : <span className="text-muted-foreground/30">—</span>
-                    }
-                  </td>
-                  {/* Día */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center">
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                      row.festivo ? "bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-200" :
-                      row.dia === "D" ? "bg-red-50 text-red-600 ring-1 ring-inset ring-red-200" :
-                      row.dia === "S" ? "bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-200" :
-                      "bg-muted text-muted-foreground ring-1 ring-inset ring-border"
-                    }`}>
-                      {diaLabel}
-                    </span>
-                  </td>
-                  {/* Jornada (horas) */}
-                  {/* <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums text-foreground/80">
-                    {row.horas}
-                  </td> */}
-                  {/* Diferencia */}
-                  <td className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
-                    {row.diferencia !== 0
-                      ? <span className="text-orange-600">{row.diferencia}</span>
-                      : <span className="text-muted-foreground/30">—</span>
-                    }
-                  </td>
+                  {visibleColumns.map(col => renderCell(row, col))}
                 </tr>
               )
             })}
