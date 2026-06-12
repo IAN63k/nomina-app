@@ -59,6 +59,19 @@ export type TurnoRow = {
   dia_numero: number
   festivo?: boolean
   created_at?: string
+  /**
+   * Horario COMPLETO del turno trabajado (catálogo), sin partir por medianoche ni
+   * recortar al tramo del concepto. Solo presentación (columna "Turno trabajado");
+   * no se persiste en BD.
+   */
+  turnoEntrada?: string | null
+  turnoSalida?: string | null
+  /**
+   * Franjas exactas donde aplica el concepto de la fila (recargo/extra/base), p. ej.
+   * un nocturno 36 de un turno 06:00–22:00 lleva [{ desde: "19:00", hasta: "22:00" }].
+   * Puede haber varias franjas disjuntas. Solo presentación; no se persiste en BD.
+   */
+  recargoRanges?: Array<{ desde: string; hasta: string }>
 }
 
 const MONTHS_ES: Record<string, number> = {
@@ -249,33 +262,56 @@ const splitByWindows = (
 /** Conceptos de recargo nocturno (a los que aplica el descuento `nightDiffHours`). */
 const NIGHT_RECARGO_CONCEPTOS = new Set([35, 36])
 
+type MinuteRange = { start: number; end: number }
+
+/** Franjas [start, end) en minutos → etiquetas "HH:MM" para la columna Desde/Hasta. */
+const rangesToLabels = (ranges: MinuteRange[]): Array<{ desde: string; hasta: string }> =>
+  ranges.map((r) => ({ desde: minutesToTimeLabel(r.start), hasta: minutesToTimeLabel(r.end) }))
+
+/** Fusiona franjas contiguas (la una termina donde empieza la siguiente). */
+const coalesceLabelRanges = (
+  ranges: Array<{ desde: string; hasta: string }>
+): Array<{ desde: string; hasta: string }> => {
+  const out: Array<{ desde: string; hasta: string }> = []
+  for (const range of ranges) {
+    const last = out[out.length - 1]
+    if (last && last.hasta === range.desde) last.hasta = range.hasta
+    else out.push({ ...range })
+  }
+  return out
+}
+
 /**
- * Desglosa un tramo [fromMin, toMin] de UNA sola fecha en minutos por concepto de
- * recargo según las ventanas de su tipo de día. La clave 0 agrupa los minutos
- * neutros (horas ordinarias sin recargo, p. ej. el día de un turno hábil).
+ * Desglosa un tramo [fromMin, toMin] de UNA sola fecha en minutos y franjas por
+ * concepto de recargo según las ventanas de su tipo de día. La clave 0 agrupa los
+ * minutos neutros (horas ordinarias sin recargo, p. ej. el día de un turno hábil).
  *
  * A diferencia del enfoque anterior (un único concepto dominante por tramo), aquí se
  * conservan TODOS los conceptos presentes para emitirlos como filas separadas
- * (p. ej. en festivo: 39 diurno + 35 nocturno conviven en el mismo turno).
+ * (p. ej. en festivo: 39 diurno + 35 nocturno conviven en el mismo turno). Las
+ * franjas alimentan la columna Desde/Hasta del detalle (rango exacto del recargo).
  */
-const recargoMinsByConcepto = (
+const recargoPartsByConcepto = (
   dia: DiaBD,
   fromMin: number,
   toMin: number,
   config: RecargoConfig
-): Map<number, number> => {
+): Map<number, { mins: number; ranges: MinuteRange[] }> => {
   const windows = getRecargoWindows(dia, config)
   const parts = splitByWindows(fromMin, toMin, windows)
 
-  const minsByConcepto = new Map<number, number>()
+  const byConcepto = new Map<number, { mins: number; ranges: MinuteRange[] }>()
   for (const part of parts) {
     const mins = Math.max(0, part.end - part.start)
     if (mins === 0) continue
     const key = part.concepto ?? 0 // 0 = neutro (horas base sin recargo)
-    minsByConcepto.set(key, (minsByConcepto.get(key) ?? 0) + mins)
+    const entry = byConcepto.get(key) ?? { mins: 0, ranges: [] }
+    entry.mins += mins
+    entry.ranges.push({ start: part.start, end: part.end })
+    byConcepto.set(key, entry)
   }
 
-  return minsByConcepto
+  return byConcepto
 }
 
 // ─── Agregación / reconstrucción ─────────────────────────────────────────────────
@@ -307,6 +343,11 @@ const addRowAggregated = (
     return
   }
 
+  const mergedRanges =
+    existing.recargoRanges || row.recargoRanges
+      ? [...(existing.recargoRanges ?? []), ...(row.recargoRanges ?? [])]
+      : undefined
+
   rowsByKey.set(key, {
     ...existing,
     turno_codigo: existing.turno_codigo || row.turno_codigo,
@@ -316,6 +357,9 @@ const addRowAggregated = (
     horasrecargo: Number((existing.horasrecargo + row.horasrecargo).toFixed(2)),
     diferencia: Number((existing.diferencia + row.diferencia).toFixed(2)),
     festivo: existing.festivo || row.festivo,
+    turnoEntrada: existing.turnoEntrada ?? row.turnoEntrada,
+    turnoSalida: existing.turnoSalida ?? row.turnoSalida,
+    recargoRanges: mergedRanges,
   })
 }
 
@@ -403,6 +447,8 @@ type Segment = {
   diffHours: number // descuento nocturno aplicable (solo el segmento post-medianoche)
   entrada: string | null
   salida: string | null
+  turnoEntrada: string | null // horario completo del turno (sin partir por medianoche)
+  turnoSalida: string | null
   mes: number
   dia_numero: number
 }
@@ -414,41 +460,64 @@ const mondayKey = (date: Date): string => {
   return toDateOnly(addDays(date, offset))
 }
 
-const rangeOverlap = (a1: number, a2: number, b1: number, b2: number) =>
-  Math.max(0, Math.min(a2, b2) - Math.max(a1, b1))
-
-// Minutos nocturnos dentro de [from, to] según la ventana nocturna del recargoConfig.
-const nightMinutesIn = (from: number, to: number, nightStart: number, nightEnd: number) => {
-  if (nightStart > nightEnd) {
-    return rangeOverlap(from, to, 0, nightEnd) + rangeOverlap(from, to, nightStart, 1440)
+// Intersección de [from, to] con una lista de ventanas [start, end), en orden.
+const intersectRanges = (
+  from: number,
+  to: number,
+  windows: Array<{ start: number; end: number }>
+): Array<{ start: number; end: number }> => {
+  const out: Array<{ start: number; end: number }> = []
+  for (const w of windows) {
+    const start = Math.max(from, w.start)
+    const end = Math.min(to, w.end)
+    if (end > start) out.push({ start, end })
   }
-  return rangeOverlap(from, to, nightStart, nightEnd)
+  return out
 }
 
 // Clasifica un tramo extra [from, to] de una fecha en sus conceptos 31–34 según la
 // franja (diurna/nocturna por la ventana del recargoConfig) y el tipo de día efectivo.
+// Devuelve además las franjas exactas de cada concepto (Desde/Hasta del detalle).
 const classifyExtra = (
   effectiveDia: DiaBD,
   from: number,
   to: number,
   config: RecargoConfig
-): Array<{ concepto: number; horas: number }> => {
+): Array<{ concepto: number; horas: number; ranges: MinuteRange[] }> => {
   const total = Math.max(0, to - from)
   if (total === 0) return []
 
   const nightStart = toMinutes(config.nightStart) ?? toMinutes(DEFAULT_RECARGO_CONFIG.nightStart) ?? 1140
   const nightEnd = toMinutes(config.nightEnd) ?? toMinutes(DEFAULT_RECARGO_CONFIG.nightEnd) ?? 360
+  const crossesDay = nightStart > nightEnd
 
-  const nightMins = nightMinutesIn(from, to, nightStart, nightEnd)
+  const nightWindows = crossesDay
+    ? [{ start: 0, end: nightEnd }, { start: nightStart, end: 1440 }]
+    : [{ start: nightStart, end: nightEnd }]
+  const dayWindows = crossesDay
+    ? [{ start: nightEnd, end: nightStart }]
+    : [{ start: 0, end: nightStart }, { start: nightEnd, end: 1440 }]
+
+  const nightRanges = intersectRanges(from, to, nightWindows)
+  const dayRanges = intersectRanges(from, to, dayWindows)
+  const nightMins = nightRanges.reduce((sum, r) => sum + (r.end - r.start), 0)
   const dayMins = total - nightMins
   const festiva = effectiveDia === "D"
 
-  const out: Array<{ concepto: number; horas: number }> = []
+  const out: Array<{ concepto: number; horas: number; ranges: MinuteRange[] }> = []
   if (dayMins > 0) {
-    out.push({ concepto: festiva ? EXTRA_DIURNA_FESTIVA : EXTRA_DIURNA_ORDINARIA, horas: minutesToHours(dayMins) })
+    out.push({
+      concepto: festiva ? EXTRA_DIURNA_FESTIVA : EXTRA_DIURNA_ORDINARIA,
+      horas: minutesToHours(dayMins),
+      ranges: dayRanges,
+    })
   }
   if (nightMins > 0) {
-    out.push({ concepto: festiva ? EXTRA_NOCTURNA_FESTIVA : EXTRA_NOCTURNA_ORDINARIA, horas: minutesToHours(nightMins) })
+    out.push({
+      concepto: festiva ? EXTRA_NOCTURNA_FESTIVA : EXTRA_NOCTURNA_ORDINARIA,
+      horas: minutesToHours(nightMins),
+      ranges: nightRanges,
+    })
   }
   return out
 }
@@ -471,6 +540,8 @@ const baseRow = (seg: Segment, concepto: number, override: Partial<TurnoRow>): T
   mes: seg.mes,
   dia_numero: seg.dia_numero,
   festivo: seg.festivo || undefined,
+  turnoEntrada: seg.turnoEntrada,
+  turnoSalida: seg.turnoSalida,
   ...override,
 })
 
@@ -556,6 +627,9 @@ export const buildTurnoRows = (
             diffHours,
             entrada: segEntrada,
             salida: segSalida,
+            // Horario completo del turno según catálogo (columna "Turno trabajado").
+            turnoEntrada: entrada,
+            turnoSalida: salida,
             mes: segDate.getMonth() + 1,
             dia_numero: segDate.getDate(),
           })
@@ -632,10 +706,11 @@ export const buildTurnoRows = (
       segEntrada: string | null,
       segSalida: string | null
     ) => {
-      const minsByConcepto = recargoMinsByConcepto(seg.effectiveDia, from, to, config)
+      const partsByConcepto = recargoPartsByConcepto(seg.effectiveDia, from, to, config)
       let diffMins = seg.diffHours > 0 ? Math.round(seg.diffHours * 60) : 0
 
-      for (const [concepto, mins] of minsByConcepto) {
+      for (const [concepto, { mins, ranges }] of partsByConcepto) {
+        const recargoRanges = rangesToLabels(ranges)
         if (concepto === 0) {
           // Horas base ordinarias (sin recargo).
           addRowAggregated(
@@ -644,6 +719,7 @@ export const buildTurnoRows = (
               horas: minutesToHours(mins),
               entrada: segEntrada,
               salida: segSalida,
+              recargoRanges,
             }),
             splitByTimeRange
           )
@@ -667,6 +743,7 @@ export const buildTurnoRows = (
             diferencia,
             entrada: segEntrada,
             salida: segSalida,
+            recargoRanges,
           }),
           splitByTimeRange
         )
@@ -693,6 +770,7 @@ export const buildTurnoRows = (
             diferencia: 0,
             entrada: minutesToTimeLabel(from),
             salida: minutesToTimeLabel(to),
+            recargoRanges: rangesToLabels(part.ranges),
           }),
           splitByTimeRange
         )
@@ -773,6 +851,12 @@ const mergeDiscountRemnants = (rows: TurnoRow[]): TurnoRow[] => {
     target.entrada = remnant.entrada
     target.horas = Number((target.horas + remnant.horas).toFixed(2))
     target.diferencia = Number((target.diferencia + remnant.diferencia).toFixed(2))
+    if (remnant.recargoRanges || target.recargoRanges) {
+      target.recargoRanges = coalesceLabelRanges([
+        ...(remnant.recargoRanges ?? []),
+        ...(target.recargoRanges ?? []),
+      ])
+    }
     removed.add(remnant)
   }
 
