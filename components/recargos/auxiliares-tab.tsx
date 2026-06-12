@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Users } from "lucide-react"
+import { Loader2, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DoctorSummary } from "@/src/components/DoctorSummary"
@@ -178,14 +178,24 @@ export function RecargosAuxiliaresTab() {
         <FileUpload onFile={handleFileWithSaveSuggestion} loading={loading} error={error} />
 
         <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm">
-          {dbLoading ? <p className="text-muted-foreground">Consultando información guardada en BD...</p> : null}
+          {dbLoading ? (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Consultando información guardada en BD...
+            </p>
+          ) : null}
           {!dbLoading && dbMessage ? <p className="text-foreground">{dbMessage}</p> : null}
           {dbError ? <p className="text-destructive">Error BD: {dbError}</p> : null}
 
           {saveSuggestionVisible ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button type="button" onClick={handleSaveToDb} disabled={savingToDb || loading}>
-                {savingToDb ? "Guardando..." : "Sí, guardar en BD"}
+                {savingToDb ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : "Sí, guardar en BD"}
               </Button>
               <Button
                 type="button"
@@ -204,7 +214,12 @@ export function RecargosAuxiliaresTab() {
           {!saveSuggestionVisible && months.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={handleSaveToDb} disabled={savingToDb || loading}>
-                {savingToDb ? "Guardando..." : `Guardar en BD (${totalDbRows} filas)`}
+                {savingToDb ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Guardando...
+                  </>
+                ) : `Guardar en BD (${totalDbRows} filas)`}
               </Button>
             </div>
           ) : null}
