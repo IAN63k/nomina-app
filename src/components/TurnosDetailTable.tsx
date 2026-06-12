@@ -1,8 +1,9 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, Columns3, RotateCcw, Search } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsUpDown, ChevronUp, Columns3, Eye, EyeOff, Loader2, RotateCcw, Search } from "lucide-react"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
+import { loadRecargosDetailPrefs, saveRecargosDetailPrefs, type RecargosDetailPrefs } from "@/src/services/userPreferences"
 import type { ShiftModule } from "@/src/constants/shiftColors"
 import type { PeriodFilter } from "@/src/hooks/usePeriodFilter"
 import { AUX_ABSENCE_CODES, AUX_SHIFT_DETAILS } from "@/src/constants/auxiliaresShifts"
@@ -131,7 +132,8 @@ const COLUMN_GROUPS = ["Identificación", "Turno trabajado", "Recargos", "Ausent
 const defaultVisibility = (): Record<string, boolean> =>
   Object.fromEntries(COLUMNS.map((c) => [c.key, !c.defaultHidden]))
 
-const visibilityStorageKey = (module: ShiftModule) => `nomina:recargos:detail-cols:${module}`
+/** Una fila "tiene recargo" si el motor le calculó cantidad de horas de recargo/extra. */
+const hasRecargo = (row: TurnoMedicoRow) => row.horasrecargo > 0
 
 function getValue(row: TurnoMedicoRow, key: string, module: ShiftModule): string | number {
   switch (key) {
@@ -177,33 +179,45 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
   const [sortCol, setSortCol]             = useState<string>("fecha")
   const [sortDir, setSortDir]             = useState<SortDir>("asc")
 
-  // Visibilidad de columnas: preferencia persistida por módulo (flexibilidad y
-  // eficiencia de uso). Defaults: turno trabajado + recargos + ausentismos visibles.
-  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(() => {
-    const defaults = defaultVisibility()
-    if (typeof window === "undefined") return defaults
-    try {
-      const saved = JSON.parse(window.localStorage.getItem(visibilityStorageKey(module)) ?? "null")
-      return saved && typeof saved === "object" ? { ...defaults, ...saved } : defaults
-    } catch {
-      return defaults
+  // Preferencias persistidas por módulo (flexibilidad y eficiencia de uso):
+  // columnas visibles, filtro "sin recargo" y tamaño de página. Se cargan en un
+  // efecto porque la API de preferencias es asíncrona (hoy localStorage, mañana
+  // BD) y mientras tanto se muestra un estado de carga (visibilidad del estado
+  // del sistema).
+  const [visibleCols, setVisibleCols] = useState<Record<string, boolean>>(defaultVisibility)
+  const [showSinRecargo, setShowSinRecargo] = useState(false)
+  // Módulo cuyas preferencias ya se cargaron: si cambia el módulo, vuelve a
+  // mostrarse el estado de carga sin necesidad de un reset síncrono en el efecto.
+  const [prefsModule, setPrefsModule] = useState<ShiftModule | null>(null)
+  const prefsLoaded = prefsModule === module
+
+  useEffect(() => {
+    let active = true
+    loadRecargosDetailPrefs(module).then((saved) => {
+      if (!active) return
+      if (saved?.visibleCols) setVisibleCols({ ...defaultVisibility(), ...saved.visibleCols })
+      if (typeof saved?.showSinRecargo === "boolean") setShowSinRecargo(saved.showSinRecargo)
+      if (typeof saved?.pageSize === "number" && PAGE_SIZE_OPTIONS.includes(saved.pageSize)) {
+        setPageSize(saved.pageSize)
+      }
+      setPrefsModule(module)
+    })
+    return () => {
+      active = false
     }
-  })
+  }, [module])
 
   const visibleColumns = COLUMNS.filter((c) => c.lockVisible || visibleCols[c.key] !== false)
   const hiddenCount = COLUMNS.length - visibleColumns.length
 
-  const persistVisibility = (next: Record<string, boolean>) => {
-    setVisibleCols(next)
-    try {
-      window.localStorage.setItem(visibilityStorageKey(module), JSON.stringify(next))
-    } catch {
-      // localStorage no disponible: la preferencia vive solo en la sesión.
-    }
+  const persistPrefs = (next: Partial<RecargosDetailPrefs>) => {
+    void saveRecargosDetailPrefs(module, { visibleCols, showSinRecargo, pageSize, ...next })
   }
 
   const toggleColumn = (key: string, visible: boolean) => {
-    persistVisibility({ ...visibleCols, [key]: visible })
+    const nextCols = { ...visibleCols, [key]: visible }
+    setVisibleCols(nextCols)
+    persistPrefs({ visibleCols: nextCols })
     // Una columna oculta no debe seguir filtrando "invisiblemente" (visibilidad del
     // estado del sistema): al ocultarla se descarta su filtro y, si ordenaba, se
     // vuelve al orden por fecha.
@@ -220,7 +234,16 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
   }
 
   const resetColumns = () => {
-    persistVisibility(defaultVisibility())
+    const defaults = defaultVisibility()
+    setVisibleCols(defaults)
+    persistPrefs({ visibleCols: defaults })
+  }
+
+  const toggleSinRecargo = () => {
+    const next = !showSinRecargo
+    setShowSinRecargo(next)
+    persistPrefs({ showSinRecargo: next })
+    setPage(1)
   }
 
   // Al cambiar el periodo o el mes dominante, volver a la primera página para no
@@ -244,7 +267,9 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
     setPage(1)
   }
 
-  const filtered = useMemo(() => {
+  // Búsqueda + filtros de columna, ANTES del filtro de recargo: así el botón
+  // "Mostrar días sin recargo" puede informar cuántas filas hay ocultas.
+  const searchedRows = useMemo(() => {
     let res = [...periodRows]
 
     if (search.trim()) {
@@ -262,7 +287,25 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
       res = res.filter(r => String(getValue(r, key, module)).toLowerCase().includes(q))
     }
 
+    return res
+  }, [periodRows, search, filters, module])
+
+  const sinRecargoCount = useMemo(
+    () => searchedRows.reduce((acc, r) => acc + (hasRecargo(r) ? 0 : 1), 0),
+    [searchedRows]
+  )
+
+  const filtered = useMemo(() => {
+    // Por defecto solo se listan los días con recargo; el resto se revela con el
+    // botón "Mostrar días sin recargo" y, al revelarse, va después (prioridad a
+    // las filas con recargo).
+    const res = showSinRecargo ? [...searchedRows] : searchedRows.filter(hasRecargo)
+
     res.sort((a, b) => {
+      if (showSinRecargo) {
+        const byRecargo = Number(hasRecargo(b)) - Number(hasRecargo(a))
+        if (byRecargo !== 0) return byRecargo
+      }
       const av = getValue(a, sortCol, module)
       const bv = getValue(b, sortCol, module)
       const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true })
@@ -270,7 +313,7 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
     })
 
     return res
-  }, [periodRows, search, filters, sortCol, sortDir, module])
+  }, [searchedRows, showSinRecargo, sortCol, sortDir, module])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
   const safePage   = Math.min(page, totalPages)
@@ -492,6 +535,20 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           />
         </div>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {/* Días sin recargo: ocultos por defecto, preferencia persistida por módulo. */}
+          <button
+            type="button"
+            onClick={toggleSinRecargo}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            {showSinRecargo ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {showSinRecargo ? "Ocultar días sin recargo" : "Mostrar días sin recargo"}
+            {!showSinRecargo && sinRecargoCount > 0 && (
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground">
+                {sinRecargoCount}
+              </span>
+            )}
+          </button>
           {/* Mostrar/ocultar columnas: preferencia persistida por módulo. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -545,7 +602,12 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           <span className="tabular-nums">{filtered.length} registros</span>
           <select
             value={pageSize}
-            onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
+            onChange={e => {
+              const size = Number(e.target.value)
+              setPageSize(size)
+              persistPrefs({ pageSize: size })
+              setPage(1)
+            }}
             className="h-7 rounded-md border border-border bg-background px-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n} / pág</option>)}
@@ -554,6 +616,14 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
       </div>
 
       {/* Table */}
+      {!prefsLoaded ? (
+        // Estado de carga mientras se consultan las preferencias guardadas
+        // (localStorage hoy, BD mañana): visibilidad del estado del sistema.
+        <div className="flex items-center justify-center gap-2 rounded-xl border border-border bg-background py-12 text-sm text-muted-foreground shadow-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Cargando preferencias guardadas...
+        </div>
+      ) : (
       <div className="overflow-x-auto rounded-xl border border-border bg-background shadow-sm">
         <table className="min-w-full border-separate border-spacing-0 text-sm">
           <thead>
@@ -604,7 +674,9 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
             {paged.length === 0 ? (
               <tr>
                 <td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                  No hay registros para mostrar.
+                  {!showSinRecargo && sinRecargoCount > 0
+                    ? `No hay días con recargo en este periodo. Hay ${sinRecargoCount} días sin recargo ocultos: usa "Mostrar días sin recargo" para verlos.`
+                    : "No hay registros para mostrar."}
                 </td>
               </tr>
             ) : paged.map((row, i) => {
@@ -622,6 +694,7 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           </tbody>
         </table>
       </div>
+      )}
 
       {/* Pagination */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
