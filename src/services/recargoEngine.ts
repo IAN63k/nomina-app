@@ -21,6 +21,13 @@ export type DiaBD = "D" | "H" | "S"
  */
 export const WEEKLY_FESTIVO_CAP = 37
 
+/**
+ * Jornada ordinaria semanal estándar (semana sin festivo). Todo lo trabajado por
+ * encima se liquida como hora extra (31–34), igual que con el tope festivo de 37h.
+ * Valor vigente en Colombia hasta jul-2026 (Ley 2101 lo baja luego a 42h).
+ */
+export const WEEKLY_ORDINARY_CAP = 44
+
 /** Conceptos de hora extra por tipo de día y franja horaria. */
 const EXTRA_DIURNA_ORDINARIA = 31 // L–S no festivo, 06:00–19:00
 const EXTRA_NOCTURNA_ORDINARIA = 32 // L–S no festivo, 19:00–06:00
@@ -552,10 +559,10 @@ const baseRow = (seg: Segment, concepto: number, override: Partial<TurnoRow>): T
  * Etapas:
  *  1. Segmentos por fecha (un turno que cruza la medianoche se parte en dos).
  *  2. Cálculo del recargo nocturno (conceptos 35/36/39) por segmento.
- *  3. Horas extra semanales: si la semana (lunes–domingo) contiene un festivo, la
- *     jornada ordinaria se topa en 37h y lo trabajado por encima se reclasifica como
- *     hora extra (conceptos 31–34) — de forma EXCLUYENTE: la porción extra ya no
- *     genera recargo nocturno ordinario.
+ *  3. Horas extra semanales: la jornada ordinaria se topa en 44h (semana normal) o
+ *     37h (si la semana lunes–domingo contiene un festivo) y lo trabajado por encima
+ *     del tope se reclasifica como hora extra (conceptos 31–34) — de forma EXCLUYENTE:
+ *     la porción extra ya no genera recargo nocturno ordinario.
  *
  * Las filas se agregan por (medico, fecha, concepto): un día puede tener varias
  * líneas (p. ej. recargo 36 + extra 32), alineado con la clave única de las tablas.
@@ -777,6 +784,10 @@ export const buildTurnoRows = (
       }
     }
 
+    // Tope ordinario de la semana: 37h si contiene festivo, 44h en una semana normal.
+    // Todo lo trabajado por encima se reclasifica como hora extra (31–34).
+    const weeklyCap = festivoWeek ? WEEKLY_FESTIVO_CAP : WEEKLY_ORDINARY_CAP
+
     for (const seg of ordered) {
       // Segmento sin horario: fila simple de paso (no acumula ni genera extra).
       if (seg.startMin === null || seg.endMin === null) {
@@ -784,24 +795,19 @@ export const buildTurnoRows = (
         continue
       }
 
-      if (!festivoWeek) {
-        emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
-        continue
-      }
-
       const before = cumulative
       const after = before + seg.horas
       cumulative = after
 
-      if (before >= WEEKLY_FESTIVO_CAP) {
+      if (before >= weeklyCap) {
         // Totalmente extra: la cantidad oficial es la del propio turno.
         emitExtra(seg, seg.startMin, seg.endMin, seg.horas)
-      } else if (after <= WEEKLY_FESTIVO_CAP) {
+      } else if (after <= weeklyCap) {
         // Totalmente ordinario.
         emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
       } else {
-        // Cruza el tope de 37h: partir en ordinario + extra (proporcional al rango).
-        const ordinaryHoras = WEEKLY_FESTIVO_CAP - before
+        // Cruza el tope semanal: partir en ordinario + extra (proporcional al rango).
+        const ordinaryHoras = weeklyCap - before
         const extraHoras = seg.horas - ordinaryHoras
         const rangeMin = seg.endMin - seg.startMin
         const rawSplit = seg.startMin + Math.round((ordinaryHoras / seg.horas) * rangeMin)
