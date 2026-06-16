@@ -55,17 +55,9 @@ export function usePeriodFilter(rows: TurnoMedicoRow[]) {
   const isQ1 = !!monthInfo.ym && periodFrom === q1From && periodTo === q1To
   const isQ2 = !!monthInfo.ym && periodFrom === q2From && periodTo === q2To
 
-  // Límites del rango libre: primer y último día del mes seleccionado, en coherencia
-  // con las quincenas. Así no se pueden elegir fechas fuera del mes que muestra la tabla.
-  const monthStart = q1From
-  const monthEnd   = q2To
-  const clampToMonth = (value: string) => {
-    if (!value || !monthInfo.ym) return value
-    if (value < monthStart) return monthStart
-    if (value > monthEnd) return monthEnd
-    return value
-  }
-
+  // El rango de fechas es libre: el usuario puede elegir cualquier fecha (incluso
+  // cruzando meses) sin que se acote al mes dominante. Las quincenas son solo atajos
+  // basados en ese mes; el calendario no impone límites.
   const applyQuincena = (half: 1 | 2) => {
     if (!monthInfo.ym) return
     setPeriodFrom(half === 1 ? q1From : q2From)
@@ -89,17 +81,6 @@ export function usePeriodFilter(rows: TurnoMedicoRow[]) {
     return monthInfo.ym || "completo"
   }
 
-  // Al cambiar el mes dominante (otra pestaña de mes), limpiar el periodo para no
-  // dejar la tabla vacía con un rango del mes anterior. Se ajusta durante el render
-  // (patrón recomendado de React para sincronizar estado al cambiar una entrada),
-  // evitando un efecto que dispararía renders en cascada.
-  const [prevYm, setPrevYm] = useState(monthInfo.ym)
-  if (prevYm !== monthInfo.ym) {
-    setPrevYm(monthInfo.ym)
-    setPeriodFrom("")
-    setPeriodTo("")
-  }
-
   return {
     periodFrom,
     periodTo,
@@ -108,9 +89,6 @@ export function usePeriodFilter(rows: TurnoMedicoRow[]) {
     monthInfo,
     isQ1,
     isQ2,
-    monthStart,
-    monthEnd,
-    clampToMonth,
     applyQuincena,
     clearPeriod,
     periodRows,

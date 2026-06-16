@@ -61,16 +61,18 @@ export function RecargosMedicosTab() {
     [months]
   )
 
-  const activeMonthRows = useMemo(() => {
-    if (!activeMonth) return []
-    return computeDisplayRows([activeMonth], turnos, recargoConfig)
-  }, [activeMonth, turnos, recargoConfig])
+  // El detalle/exportación ya no se acota al mes seleccionado: se calcula cada mes por
+  // separado (preservando el agrupamiento semanal del motor) y se concatenan, para que
+  // el filtro de fechas pueda elegir cualquier rango libre, incluso cruzando meses.
+  const allRows = useMemo(() => {
+    return months.flatMap((month) => computeDisplayRows([month], turnos, recargoConfig))
+  }, [months, turnos, recargoConfig])
 
   // Inyectar temporalmente la cédula desde el contexto de empleados (solo en memoria/UI)
   const { getCedulaByName } = useEmpleados()
 
-  const activeMonthRowsWithCedula = useMemo(() => {
-    return activeMonthRows.map((r) => {
+  const allRowsWithCedula = useMemo(() => {
+    return allRows.map((r) => {
       // Si ya existe documento, no tocar
       if (r.documento) return r
 
@@ -85,10 +87,10 @@ export function RecargosMedicosTab() {
         return r
       }
     })
-  }, [activeMonthRows, getCedulaByName])
+  }, [allRows, getCedulaByName])
 
   // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
-  const period = usePeriodFilter(activeMonthRowsWithCedula)
+  const period = usePeriodFilter(allRowsWithCedula)
 
   // La carga desde BD corre una sola vez al montar; leemos el catálogo de horas vía ref
   // para reconstruir con horas oficiales sin re-disparar el fetch al cambiar la config.
