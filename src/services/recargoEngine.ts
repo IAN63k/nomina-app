@@ -355,6 +355,16 @@ const addRowAggregated = (
       ? [...(existing.recargoRanges ?? []), ...(row.recargoRanges ?? [])]
       : undefined
 
+  // El festivo de la fila agregada es el del segmento físicamente en su día de inicio
+  // (`fecha === fechaInicio`), no el OR de ambas mitades: la cola post‑medianoche de un
+  // nocturno cae en otra `fecha` (el día siguiente) y su festivo —p. ej. un lunes
+  // festivo de calendario— pertenece a ESE día, no al de inicio. Si lo fusionáramos, la
+  // fila quedaría con `fecha` = día de inicio pero `festivo=true`, y al recargar marcaría
+  // el día de inicio como /DF manual, disparando el tope semanal de 37h indebidamente.
+  const startDayRow =
+    existing.fecha === existing.fechaInicio ? existing : row.fecha === row.fechaInicio ? row : null
+  const mergedFestivo = startDayRow ? startDayRow.festivo : existing.festivo || row.festivo
+
   rowsByKey.set(key, {
     ...existing,
     turno_codigo: existing.turno_codigo || row.turno_codigo,
@@ -363,7 +373,7 @@ const addRowAggregated = (
     horas: Number((existing.horas + row.horas).toFixed(2)),
     horasrecargo: Number((existing.horasrecargo + row.horasrecargo).toFixed(2)),
     diferencia: Number((existing.diferencia + row.diferencia).toFixed(2)),
-    festivo: existing.festivo || row.festivo,
+    festivo: mergedFestivo,
     turnoEntrada: existing.turnoEntrada ?? row.turnoEntrada,
     turnoSalida: existing.turnoSalida ?? row.turnoSalida,
     recargoRanges: mergedRanges,
@@ -915,7 +925,18 @@ export const buildMonthsFromRows = (
     const code = normalizeCode(row.turno_codigo)
     if (code) cell.code = code
     cell.hours = Number((cell.hours + (Number(row.horas) || 0)).toFixed(2))
-    if (row.festivo) cell.festivo = true
+    // `cell.festivo` representa SOLO el festivo MANUAL (/DF): los festivos de calendario
+    // se recalculan en cada pasada con `isFestivoColombia`, no se replican como flag de
+    // celda. El `festivo` de la fila guardada conflaciona ambos (manual + calendario) y
+    // refleja su FECHA FÍSICA, así que hay que filtrarlo en dos sentidos al recargar:
+    //  1) Solo si la fila pertenece físicamente a este día (`fecha === fechaInicio`): la
+    //     cola post‑medianoche de un nocturno se fecha al día siguiente y su festivo no
+    //     debe marcar el día de inicio.
+    //  2) Solo si el día NO es ya festivo de calendario: de lo contrario reinyectaríamos
+    //     un festivo de calendario como /DF manual, que `buildTurnoRows` aplica a AMBAS
+    //     mitades del turno (incluida la cola), reclasificando los recargos al recargar.
+    const belongsToThisDay = (row.fecha ?? startStr) === startStr
+    if (row.festivo && belongsToThisDay && !isFestivoColombia(date)) cell.festivo = true
   }
 
   const grouped = new Map<
