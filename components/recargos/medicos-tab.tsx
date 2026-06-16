@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, Stethoscope } from "lucide-react"
+import { Loader2, RotateCcw, Stethoscope, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DoctorSummary } from "@/src/components/DoctorSummary"
@@ -18,16 +18,21 @@ import { useMedicosTurnos } from "@/contexts/medicos-turnos-context"
 import { useEmpleados } from "@/contexts/empleados-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
 import { useAppearance } from "@/contexts/appearance-context"
-import { computeDisplayRows, fetchTurnosMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, upsertTurnosMedicos } from "@/src/services/turnosMedicosDb"
+import { useAuth } from "@/contexts/auth-context"
+import { computeDisplayRows, deleteTurnosMedicos, fetchTurnosMedicos, getUltimaEliminacionMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, restaurarTurnosMedicos, upsertTurnosMedicos, type UltimaEliminacion } from "@/src/services/turnosMedicosDb"
 
 export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const { colorOf } = useAppearance()
+  const { user } = useAuth()
   const [dbLoading, setDbLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [saveSuggestionVisible, setSaveSuggestionVisible] = useState(false)
   const [savingToDb, setSavingToDb] = useState(false)
+  const [deletingFromDb, setDeletingFromDb] = useState(false)
+  const [restoringFromDb, setRestoringFromDb] = useState(false)
+  const [ultimaEliminacion, setUltimaEliminacion] = useState<UltimaEliminacion | null>(null)
   const [dbMessage, setDbMessage] = useState<string | null>(null)
 
   const {
@@ -104,6 +109,10 @@ export function RecargosMedicosTab() {
       setDbLoading(true)
       setDbError(null)
       try {
+        getUltimaEliminacionMedicos()
+          .then((info) => { if (isMounted) setUltimaEliminacion(info) })
+          .catch(() => { /* la papelera es opcional; ignorar errores de consulta */ })
+
         const rows = await fetchTurnosMedicos()
         if (!isMounted) return
 
@@ -162,6 +171,54 @@ export function RecargosMedicosTab() {
     }
   }
 
+  const handleDeleteFromDb = async () => {
+    const confirmed = window.confirm(
+      "¿Eliminar todos los datos de médicos guardados en la base de datos?\n\n" +
+        "Las filas se moverán a la papelera (turnos_medicos_trash) y se quitarán de la vista. " +
+        "Esta acción vacía la tabla turnos_medicos."
+    )
+    if (!confirmed) return
+
+    setDbError(null)
+    setDeletingFromDb(true)
+    try {
+      const removed = await deleteTurnosMedicos(user?.usuario ?? null)
+      setMonthsData([])
+      setSaveSuggestionVisible(false)
+      setUltimaEliminacion(removed > 0 ? { filas: removed, deletedAt: new Date().toISOString(), deletedBy: user?.usuario ?? null } : null)
+      setDbMessage(`Se enviaron ${removed} filas a la papelera. La tabla quedó vacía.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron eliminar los datos de la base de datos"
+      setDbError(message)
+    } finally {
+      setDeletingFromDb(false)
+    }
+  }
+
+  const handleRestoreFromDb = async () => {
+    setDbError(null)
+    setRestoringFromDb(true)
+    try {
+      const restored = await restaurarTurnosMedicos()
+      if (restored === 0) {
+        setUltimaEliminacion(null)
+        setDbMessage("No hay nada en la papelera para restaurar.")
+        return
+      }
+
+      const rows = await fetchTurnosMedicos()
+      const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current)
+      setMonthsData(mappedMonths)
+      setUltimaEliminacion(null)
+      setDbMessage(`Se restauraron ${restored} filas desde la papelera.`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron restaurar los datos desde la papelera"
+      setDbError(message)
+    } finally {
+      setRestoringFromDb(false)
+    }
+  }
+
   return (
     <section className="rounded-xl p-6">
       <div className="mb-4 inline-flex items-center gap-2 rounded-full border bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
@@ -182,6 +239,29 @@ export function RecargosMedicosTab() {
           ) : null}
           {!dbLoading && dbMessage ? <p className="text-foreground">{dbMessage}</p> : null}
           {dbError ? <p className="text-destructive">Error BD: {dbError}</p> : null}
+
+          {ultimaEliminacion ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRestoreFromDb}
+                disabled={restoringFromDb || savingToDb || deletingFromDb || loading}
+              >
+                {restoringFromDb ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Restaurando...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-4 w-4" />
+                    Restaurar última eliminación ({ultimaEliminacion.filas} filas)
+                  </>
+                )}
+              </Button>
+            </div>
+          ) : null}
 
           {saveSuggestionVisible ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -209,13 +289,31 @@ export function RecargosMedicosTab() {
 
           {!saveSuggestionVisible && months.length > 0 ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" onClick={handleSaveToDb} disabled={savingToDb || loading}>
+              <Button type="button" variant="outline" onClick={handleSaveToDb} disabled={savingToDb || deletingFromDb || restoringFromDb || loading}>
                 {savingToDb ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Guardando...
                   </>
                 ) : `Guardar en BD (${totalDbRows} filas)`}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={handleDeleteFromDb}
+                disabled={savingToDb || deletingFromDb || restoringFromDb || loading}
+              >
+                {deletingFromDb ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Eliminando...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    Eliminar datos de BD
+                  </>
+                )}
               </Button>
             </div>
           ) : null}
