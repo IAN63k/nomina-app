@@ -835,7 +835,14 @@ export const buildTurnoRows = (
   // micro‑horario confuso (p. ej. 00:00–00:22, −0.37). No afecta los totales ni el
   // guardado (que usa splitByTimeRange=false): solo reubica horas/diferencia al tramo
   // extra contiguo del mismo turno para una lectura limpia.
-  return splitByTimeRange ? mergeDiscountRemnants(result) : result
+  const finalRows = splitByTimeRange ? mergeDiscountRemnants(result) : result
+
+  // La "Cantidad" (horasrecargo) se entrega redondeada a entero. Es la única fuente de
+  // verdad del módulo, así que tabla, BD y TXT comparten exactamente el mismo valor. El
+  // cálculo interno (tope semanal, descuento nocturno, partición por medianoche) sigue
+  // usando los valores precisos; solo se redondea la cantidad de salida una vez agregada.
+  for (const r of finalRows) r.horasrecargo = Math.round(r.horasrecargo)
+  return finalRows
 }
 
 /**
