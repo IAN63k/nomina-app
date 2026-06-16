@@ -9,6 +9,7 @@ import { FileUpload } from "@/src/components/FileUpload"
 import { MonthTabs } from "@/src/components/MonthTabs"
 import { MallaDrawer } from "@/components/recargos/malla-drawer"
 import { CargaHorarios } from "@/components/recargos/carga-horarios"
+import { RecargosLoading } from "@/components/recargos/recargos-loading"
 import { TurnosDetailTable } from "@/src/components/TurnosDetailTable"
 import { ConceptosPorPersona } from "@/src/components/ConceptosPorPersona"
 import { ExportMenu } from "@/src/components/ExportMenu"
@@ -330,6 +331,10 @@ export function RecargosAuxiliaresTab() {
           ) : null}
         </div>
         </CargaHorarios>
+
+        {dbLoading && months.length === 0 ? (
+          <RecargosLoading description="Estamos consultando los turnos de auxiliares guardados en la base de datos." />
+        ) : null}
 
         {months.length > 0 ? (
           <>
