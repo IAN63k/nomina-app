@@ -164,9 +164,6 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
     monthInfo,
     isQ1,
     isQ2,
-    monthStart,
-    monthEnd,
-    clampToMonth,
     applyQuincena,
     clearPeriod,
     periodRows,
@@ -487,10 +484,8 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           <input
             type="date"
             value={periodFrom}
-            min={monthStart || undefined}
-            max={(periodTo || monthEnd) || undefined}
-            disabled={!monthInfo.ym}
-            onChange={e => setPeriodFrom(clampToMonth(e.target.value))}
+            max={periodTo || undefined}
+            onChange={e => setPeriodFrom(e.target.value)}
             className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
@@ -499,10 +494,8 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
           <input
             type="date"
             value={periodTo}
-            min={(periodFrom || monthStart) || undefined}
-            max={monthEnd || undefined}
-            disabled={!monthInfo.ym}
-            onChange={e => setPeriodTo(clampToMonth(e.target.value))}
+            min={periodFrom || undefined}
+            onChange={e => setPeriodTo(e.target.value)}
             className="h-7 rounded-md border border-border bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-40"
           />
         </label>
