@@ -401,7 +401,9 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
         return (
           <td key={col.key} className="border-b border-border/50 px-3 py-2 text-center font-mono text-xs tabular-nums">
             {row.horasrecargo > 0
-              ? <span className="font-semibold text-foreground">{row.horasrecargo}</span>
+              // Solo presentación: la cantidad se muestra como entero redondeado; el valor
+              // preciso se conserva intacto para el guardado en BD y la exportación TXT.
+              ? <span className="font-semibold text-foreground">{Math.round(row.horasrecargo)}</span>
               : <span className="text-muted-foreground/30">—</span>
             }
           </td>
