@@ -87,6 +87,64 @@ export async function upsertTurnosMedicos(rows: TurnoMedicoRow[]) {
   return rows.length
 }
 
+/**
+ * Mueve TODOS los turnos de médicos a la papelera (`turnos_medicos_trash`) y vacía la
+ * tabla `turnos_medicos`. La operación es atómica: corre en la función SQL
+ * `vaciar_turnos_medicos` (security definer). Devuelve cuántas filas se enviaron a la
+ * papelera. `deletedBy` queda registrado en `deleted_by` para auditoría.
+ */
+export async function deleteTurnosMedicos(deletedBy?: string | null) {
+  const supabase = getSupabaseBrowserClient()
+  const { data, error } = await supabase.rpc("vaciar_turnos_medicos", {
+    p_deleted_by: deletedBy ?? null,
+  })
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (data as number | null) ?? 0
+}
+
+export type UltimaEliminacion = {
+  filas: number
+  deletedAt: string
+  deletedBy: string | null
+}
+
+/**
+ * Resumen del último lote enviado a la papelera de médicos (filas, fecha y usuario), o
+ * `null` si la papelera está vacía. Sirve para mostrar/ocultar el botón de restaurar.
+ */
+export async function getUltimaEliminacionMedicos(): Promise<UltimaEliminacion | null> {
+  const supabase = getSupabaseBrowserClient()
+  const { data, error } = await supabase.rpc("ultima_eliminacion_turnos_medicos")
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  const row = (data as Array<{ filas: number; deleted_at: string; deleted_by: string | null }> | null)?.[0]
+  if (!row) return null
+  return { filas: Number(row.filas) || 0, deletedAt: row.deleted_at, deletedBy: row.deleted_by }
+}
+
+/**
+ * Restaura el último lote eliminado (el grupo con el `deleted_at` más reciente) desde
+ * `turnos_medicos_trash` de vuelta a `turnos_medicos`. Atómico vía la función SQL
+ * `restaurar_turnos_medicos`. Devuelve cuántas filas se restauraron.
+ */
+export async function restaurarTurnosMedicos() {
+  const supabase = getSupabaseBrowserClient()
+  const { data, error } = await supabase.rpc("restaurar_turnos_medicos")
+
+  if (error) {
+    throw new Error(error.message)
+  }
+
+  return (data as number | null) ?? 0
+}
+
 export async function fetchTurnosMedicos() {
   const supabase = getSupabaseBrowserClient()
 
