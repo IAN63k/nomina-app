@@ -63,6 +63,10 @@ const buildHolidaySet = (year: number): Set<string> => {
   add(toNextMonday(new Date(year, 0, 6))) // Reyes Magos
   add(toNextMonday(new Date(year, 2, 19))) // San José
   add(toNextMonday(new Date(year, 5, 29))) // San Pedro y San Pablo
+  // Nuestra Señora del Rosario de Chiquinquirá — Ley 2578 de 2026 (promulgada el
+  // 1-jun-2026), por eso solo desde 2026: aplicarlo antes recalcularía semanas ya
+  // liquidadas (tope 37h y conceptos festivos donde no correspondía).
+  if (year >= 2026) add(toNextMonday(new Date(year, 6, 9)))
   add(toNextMonday(new Date(year, 7, 15))) // Asunción de la Virgen
   add(toNextMonday(new Date(year, 9, 12))) // Día de la Raza
   add(toNextMonday(new Date(year, 10, 1))) // Todos los Santos
