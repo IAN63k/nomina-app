@@ -78,11 +78,14 @@ export function RecargosAuxiliaresTab() {
     [months]
   )
 
-  // El detalle/exportación ya no se acota al mes seleccionado: se calcula cada mes por
-  // separado (preservando el agrupamiento semanal del motor) y se concatenan, para que
-  // el filtro de fechas pueda elegir cualquier rango libre, incluso cruzando meses.
+  // El detalle/exportación ya no se acota al mes seleccionado: se pasan TODAS las meses al
+  // motor en una sola llamada para que su agrupamiento semanal (medico, semana lunes–domingo)
+  // abarque las semanas que cruzan el borde de mes. Calcular mes por mes rompía esas semanas:
+  // la porción de cada mes quedaba por debajo del tope (37/44h) y no generaba hora extra
+  // (p. ej. una semana con festivo el lun 29-jun que continúa en julio). El guardado en BD ya
+  // usa el arreglo completo, así que esto alinea el detalle con lo que se persiste.
   const allRows = useMemo(() => {
-    return months.flatMap((month) => computeAuxDisplayRows([month], turnos, recargoConfig))
+    return computeAuxDisplayRows(months, turnos, recargoConfig)
   }, [months, turnos, recargoConfig])
 
   // Inyectar temporalmente la cédula desde el contexto de empleados (solo en memoria/UI)
