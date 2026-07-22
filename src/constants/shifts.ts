@@ -54,7 +54,9 @@ export const SHIFT_COLOR_BY_CODE: Record<ShiftCode, { bg: string; text: string; 
 export const SHIFT_DEFAULT_HOURS: Record<ConcreteShiftCode, number> = {
   M: 7,
   T: 7,
-  N: 10,
+  // 20:00–06:00 son 10h de reloj, pero la jornada oficial es de 9h: el refrigerio
+  // de 00:00–01:00 no se trabaja. Debe coincidir con DEFAULT_TURNOS.N.total.
+  N: 9,
   L: 0,
   A: 0,
 };
