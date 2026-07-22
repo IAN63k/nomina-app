@@ -721,10 +721,19 @@ export const buildTurnoRows = (
       from: number,
       to: number,
       segEntrada: string | null,
-      segSalida: string | null
+      segSalida: string | null,
+      officialHoras: number
     ) => {
       const partsByConcepto = recargoPartsByConcepto(seg.effectiveDia, from, to, config)
       let diffMins = seg.diffHours > 0 ? Math.round(seg.diffHours * 60) : 0
+
+      // Igual que `emitExtra`: la franja [from, to] es de reloj, pero las HORAS deben
+      // sumar las oficiales del turno (una Noche cuenta 9h, no las 10h de rango). Sin
+      // esto, un turno cuyas horas oficiales difieren del reloj —el caso del refrigerio
+      // nocturno— emite horas de reloj e infla el total semanal.
+      const rangeHoras = minutesToHours(to - from)
+      const scale = rangeHoras > 0 && officialHoras > 0 ? officialHoras / rangeHoras : 1
+      const scaled = (mins: number) => Number((minutesToHours(mins) * scale).toFixed(2))
 
       for (const [concepto, { mins, ranges }] of partsByConcepto) {
         const recargoRanges = rangesToLabels(ranges)
@@ -733,7 +742,7 @@ export const buildTurnoRows = (
           addRowAggregated(
             rowsByKey,
             baseRow(seg, conceptoDefault, {
-              horas: minutesToHours(mins),
+              horas: scaled(mins),
               entrada: segEntrada,
               salida: segSalida,
               recargoRanges,
@@ -755,7 +764,9 @@ export const buildTurnoRows = (
         addRowAggregated(
           rowsByKey,
           baseRow(seg, concepto, {
-            horas: minutesToHours(mins),
+            horas: scaled(mins),
+            // `horasrecargo` sigue en minutos de reloj menos el refrigerio: es el premio
+            // nocturno por hora efectivamente trabajada en la ventana, no jornada.
             horasrecargo: minutesToHours(recargoMins),
             diferencia,
             entrada: segEntrada,
@@ -813,8 +824,8 @@ export const buildTurnoRows = (
         // Totalmente extra: la cantidad oficial es la del propio turno.
         emitExtra(seg, seg.startMin, seg.endMin, seg.horas)
       } else if (after <= weeklyCap) {
-        // Totalmente ordinario.
-        emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida)
+        // Totalmente ordinario: las horas del tramo son las oficiales del segmento.
+        emitOrdinary(seg, seg.startMin, seg.endMin, seg.entrada, seg.salida, seg.horas)
       } else {
         // Cruza el tope semanal: partir en ordinario + extra (proporcional al rango).
         const ordinaryHoras = weeklyCap - before
@@ -822,7 +833,7 @@ export const buildTurnoRows = (
         const rangeMin = seg.endMin - seg.startMin
         const rawSplit = seg.startMin + Math.round((ordinaryHoras / seg.horas) * rangeMin)
         const splitMin = Math.min(seg.endMin, Math.max(seg.startMin, rawSplit))
-        emitOrdinary(seg, seg.startMin, splitMin, seg.entrada, minutesToTimeLabel(splitMin))
+        emitOrdinary(seg, seg.startMin, splitMin, seg.entrada, minutesToTimeLabel(splitMin), ordinaryHoras)
         emitExtra(seg, splitMin, seg.endMin, extraHoras)
       }
     }

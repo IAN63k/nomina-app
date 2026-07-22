@@ -54,13 +54,17 @@ Two component areas coexist due to ongoing migration:
 |------|------|--------------|
 | M | Mañana | 06:00–13:00 (7h) |
 | T | Tarde | 13:00–20:00 (7h) |
-| N | Noche | 20:00–06:00 (10h) |
+| N | Noche | 20:00–06:00 (**9h** — 10h de reloj menos 1h de refrigerio 00:00–01:00) |
 | L | Libre | — |
 | A | Ausencia | — |
+
+**Reloj ≠ horas oficiales.** La Noche abarca 10h de reloj pero cuenta **9h**: el refrigerio de 00:00–01:00 no se trabaja, así que no se paga ni consume jornada ordinaria. El catálogo (`MedicosTurnosContext`) debe llevar `total: 9`. Las dos puntas del motor tienen que respetarlo: `emitOrdinary` y `emitExtra` escalan los minutos de reloj a las horas oficiales del turno (`scale = officialHoras / rangeHoras`). Sin ese escalado el total semanal se infla y el tope de 37/44h se cruza antes de tiempo. M y T no llevan refrigerio.
 
 ### Recargo (Overtime Premium)
 
 Configurable night window (default 19:00–06:00). When a shift crosses into the night window, premium hours (`horasrecargo`) are computed automatically. Conceptos 35/36/39 classify the overtime type for accounting.
+
+`recargoConfig.nightDiffHours` (default 1) es el **refrigerio nocturno**, y opera sobre un eje distinto de las horas oficiales: descuenta la hora no trabajada del **premio nocturno** (`horasrecargo` de los conceptos 35/36 del tramo post-medianoche). No es doble descuento respecto a las 9h del catálogo — uno rige la jornada, el otro el recargo.
 
 ### Horas Extra — tope semanal (44h normal / 37h con festivo)
 
