@@ -32,7 +32,9 @@ const DEFAULT_CODES: string[] = ["M", "T", "N", "L", "A"]
 const DEFAULT_TURNOS: TurnosMap = {
   M: { entrada: "06:00", salida: "13:00", total: "7", descripcion: SHIFT_DETAILS.M.description },
   T: { entrada: "13:00", salida: "20:00", total: "7", descripcion: SHIFT_DETAILS.T.description },
-  N: { entrada: "20:00", salida: "06:00", total: "10", descripcion: SHIFT_DETAILS.N.description },
+  // 10h de reloj menos 1h de refrigerio (00:00–01:00): la jornada oficial es de 9h.
+  // El refrigerio no se trabaja, así que ni se paga ni consume jornada ordinaria.
+  N: { entrada: "20:00", salida: "06:00", total: "9", descripcion: SHIFT_DETAILS.N.description },
   L: { entrada: "", salida: "", total: "0", descripcion: SHIFT_DETAILS.L.description },
   A: { entrada: "", salida: "", total: "0", descripcion: SHIFT_DETAILS.A.description },
 }
