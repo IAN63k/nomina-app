@@ -20,6 +20,7 @@ import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
 import { useAppearance } from "@/contexts/appearance-context"
 import { useAuth } from "@/contexts/auth-context"
 import { computeDisplayRows, deleteTurnosMedicos, fetchTurnosMedicos, getUltimaEliminacionMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, restaurarTurnosMedicos, upsertTurnosMedicos, type UltimaEliminacion } from "@/src/services/turnosMedicosDb"
+import { parseExcelFile } from "@/src/services/excelParser"
 
 export function RecargosMedicosTab() {
   const { hoursByCode, timeRangeByCode, turnosCodes, turnos, catalogLoaded } = useMedicosTurnos()
@@ -50,7 +51,12 @@ export function RecargosMedicosTab() {
     toggleSortDirection,
     updateShift,
     setMonthsData,
-  } = useSchedule({ hoursByCode })
+  } = useSchedule({
+    hoursByCode,
+    // Sin `turnosCodes`, el parser solo reconoce M/T/N/L/A: un turno personalizado
+    // (p. ej. "ET") del Excel se descartaría silenciosamente.
+    parseFile: (file) => parseExcelFile(file, turnosCodes),
+  })
 
   const totalDbRows = useMemo(
     () =>
@@ -104,6 +110,8 @@ export function RecargosMedicosTab() {
   // para reconstruir con horas oficiales sin re-disparar el fetch al cambiar la config.
   const hoursByCodeRef = useRef(hoursByCode)
   hoursByCodeRef.current = hoursByCode
+  const turnosCodesRef = useRef(turnosCodes)
+  turnosCodesRef.current = turnosCodes
 
   useEffect(() => {
     // Esperar a que el catálogo de turnos personalizados termine de hidratarse antes de
@@ -131,7 +139,7 @@ export function RecargosMedicosTab() {
           return
         }
 
-        const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current)
+        const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current, turnosCodesRef.current)
         if (mappedMonths.length) {
           setMonthsData(mappedMonths)
           setDbMessage(`Se cargaron ${rows.length} registros guardados en la base de datos.`)
@@ -217,7 +225,7 @@ export function RecargosMedicosTab() {
       }
 
       const rows = await fetchTurnosMedicos()
-      const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current)
+      const mappedMonths = mapDbRowsToMonths(rows, hoursByCodeRef.current, turnosCodesRef.current)
       setMonthsData(mappedMonths)
       setUltimaEliminacion(null)
       setDbMessage(`Se restauraron ${restored} filas desde la papelera.`)

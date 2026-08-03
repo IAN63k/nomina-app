@@ -1,12 +1,22 @@
 import * as XLSX from "xlsx";
 import { SUNDAY_LABEL, WEEK_TOTAL_KEYWORD, XLSX_MIME_TYPES } from "@/src/constants/shifts";
-import { DayHeader, DoctorSchedule, MonthSchedule, ShiftCell, ShiftCode } from "@/src/types/schedule";
+import { DayHeader, DoctorSchedule, MonthSchedule, ShiftCell } from "@/src/types/schedule";
 
 const isValidMime = (file: File) => XLSX_MIME_TYPES.includes(file.type) || file.name.toLowerCase().endsWith(".xlsx");
 
-const toShiftCode = (value: unknown): ShiftCode => {
+/**
+ * `extraCodes`: turnos personalizados vigentes (`MedicosTurnosContext.turnosCodes`).
+ * Sin esto, un código como "ET" del Excel se descarta silenciosamente (solo se
+ * reconocen M/T/N/L/A).
+ */
+const toShiftCode = (value: unknown, extraCodes?: Iterable<string>): string => {
   const code = String(value ?? "").trim().toUpperCase();
   if (code === "M" || code === "T" || code === "N" || code === "L" || code === "A") return code;
+  if (extraCodes) {
+    for (const extra of extraCodes) {
+      if ((extra ?? "").trim().toUpperCase() === code) return code;
+    }
+  }
   return "";
 };
 
@@ -73,7 +83,8 @@ const parseDoctorRows = (
   rows: unknown[][],
   startRow: number,
   columnMeta: { header: DayHeader; colIndex: number }[],
-  totalColumnIndex: number
+  totalColumnIndex: number,
+  extraCodes?: Iterable<string>
 ) => {
   const doctors: DoctorSchedule[] = [];
 
@@ -92,7 +103,7 @@ const parseDoctorRows = (
     };
 
     for (const { header, colIndex } of columnMeta) {
-      const shiftCode = toShiftCode(shiftRow[colIndex]);
+      const shiftCode = toShiftCode(shiftRow[colIndex], extraCodes);
       const hoursValue = toNumber(hoursRow[colIndex]);
 
       if (header.isWeeklyTotal) {
@@ -110,7 +121,7 @@ const parseDoctorRows = (
   return doctors;
 };
 
-const parseSheet = (month: string, worksheet: XLSX.WorkSheet): MonthSchedule => {
+const parseSheet = (month: string, worksheet: XLSX.WorkSheet, extraCodes?: Iterable<string>): MonthSchedule => {
   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true, blankrows: false });
   if (rows.length < 3) {
     return { month, days: [], doctors: [] } satisfies MonthSchedule;
@@ -120,20 +131,24 @@ const parseSheet = (month: string, worksheet: XLSX.WorkSheet): MonthSchedule => 
   const dayNumbersRow = rows[2] ?? [];
   const totalColumnIndex = findTotalColumnIndex(dayLabelsRow, dayNumbersRow);
   const { headers, meta } = buildDayHeaders(dayLabelsRow, dayNumbersRow, totalColumnIndex);
-  const doctors = parseDoctorRows(rows, 3, meta, totalColumnIndex);
+  const doctors = parseDoctorRows(rows, 3, meta, totalColumnIndex, extraCodes);
 
   return { month, days: headers, doctors } satisfies MonthSchedule;
 };
 
-export const parseExcelFile = async (file: File): Promise<MonthSchedule[]> => {
+/**
+ * `extraCodes`: turnos personalizados vigentes (`MedicosTurnosContext.turnosCodes`),
+ * para que el Excel reconozca códigos como "ET" además de M/T/N/L/A.
+ */
+export const parseExcelFile = async (file: File, extraCodes?: Iterable<string>): Promise<MonthSchedule[]> => {
   if (!isValidMime(file)) {
     throw new Error("El archivo debe ser .xlsx");
   }
   const buffer = await file.arrayBuffer();
-  return parseWorkbookBuffer(buffer);
+  return parseWorkbookBuffer(buffer, extraCodes);
 };
 
-export const parseWorkbookBuffer = (buffer: ArrayBuffer): MonthSchedule[] => {
+export const parseWorkbookBuffer = (buffer: ArrayBuffer, extraCodes?: Iterable<string>): MonthSchedule[] => {
   const workbook = XLSX.read(buffer, { type: "array" });
   if (!workbook.SheetNames.length) {
     throw new Error("No se encontraron hojas en el archivo");
@@ -142,6 +157,6 @@ export const parseWorkbookBuffer = (buffer: ArrayBuffer): MonthSchedule[] => {
   return workbook.SheetNames.map((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
     if (!worksheet) return { month: sheetName, days: [], doctors: [] } satisfies MonthSchedule;
-    return parseSheet(sheetName, worksheet);
+    return parseSheet(sheetName, worksheet, extraCodes);
   });
 };
