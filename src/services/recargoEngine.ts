@@ -16,42 +16,46 @@ import { isFestivoColombia } from "@/src/services/festivosColombia"
 export type DiaBD = "D" | "H" | "S"
 
 /**
- * Jornada ordinaria semanal cuando la semana contiene un festivo (Colombia), vigente
- * hasta el corte de la Ley 2101 (ver `LEY_2101_CUTOVER`). A partir de esa fecha el
- * tope pasa a `WEEKLY_FESTIVO_CAP_LEY2101`. Todo lo trabajado por encima del tope
- * aplicable se liquida como hora extra (31–34).
- */
-export const WEEKLY_FESTIVO_CAP = 37
-
-/**
  * Jornada ordinaria semanal estándar (semana sin festivo), vigente hasta el corte de
  * la Ley 2101. A partir de esa fecha el tope pasa a `WEEKLY_ORDINARY_CAP_LEY2101`.
  */
 export const WEEKLY_ORDINARY_CAP = 44
 
 /**
- * Fecha (lunes de la semana) a partir de la cual rige la reducción de jornada de la
- * Ley 2101: 44h → 42h ordinarias, 37h → 35h en semana con festivo. La semana se
- * evalúa como unidad atómica por su lunes de inicio: si el lunes es anterior al
- * corte, esa semana completa usa el tope viejo aunque el corte caiga a mitad de
- * semana; el tope nuevo empieza recién la semana siguiente.
+ * Fecha a partir de la cual rige la reducción de jornada de la Ley 2101 (44h → 42h
+ * ordinarias). La semana se evalúa como unidad atómica: si CUALQUIER día de la
+ * semana (lunes a domingo) cae en o después del corte, toda la semana usa el tope
+ * nuevo — aunque el lunes sea anterior. Equivale a comparar el domingo (último día
+ * de la semana) contra el corte, ya que es el día más tardío.
  */
 export const LEY_2101_CUTOVER = "2026-07-14"
 
 /** Jornada ordinaria semanal (semana sin festivo) a partir de `LEY_2101_CUTOVER`. */
 export const WEEKLY_ORDINARY_CAP_LEY2101 = 42
 
-/** Jornada ordinaria semanal (semana con festivo) a partir de `LEY_2101_CUTOVER`. */
-export const WEEKLY_FESTIVO_CAP_LEY2101 = 35
+/**
+ * Horas que se descuentan de la jornada ordinaria semanal por CADA día festivo que
+ * contenga la semana (domingos no cuentan: ya están fuera de la jornada ordinaria
+ * por definición). Un festivo → -7h; dos festivos en la misma semana → -14h.
+ */
+const HOURS_PER_FESTIVO = 7
+
+/** Jornada ordinaria semanal con un festivo, vigente hasta el corte de Ley 2101 (44 - 7). */
+export const WEEKLY_FESTIVO_CAP = WEEKLY_ORDINARY_CAP - HOURS_PER_FESTIVO
+
+/** Jornada ordinaria semanal con un festivo, a partir de `LEY_2101_CUTOVER` (42 - 7). */
+export const WEEKLY_FESTIVO_CAP_LEY2101 = WEEKLY_ORDINARY_CAP_LEY2101 - HOURS_PER_FESTIVO
 
 /**
- * Tope ordinario semanal aplicable a una semana, según su lunes de inicio y si
- * contiene festivo. Ver `LEY_2101_CUTOVER`.
+ * Tope ordinario semanal aplicable a una semana: parte de la jornada base (según
+ * `LEY_2101_CUTOVER`) y resta `HOURS_PER_FESTIVO` por cada festivo que contenga la
+ * semana (`festivoCount`). Ver `LEY_2101_CUTOVER` sobre cómo se elige la base.
  */
-export const getWeeklyCap = (monday: Date, festivoWeek: boolean): number => {
-  const post2101 = toDateOnly(monday) >= LEY_2101_CUTOVER
-  if (post2101) return festivoWeek ? WEEKLY_FESTIVO_CAP_LEY2101 : WEEKLY_ORDINARY_CAP_LEY2101
-  return festivoWeek ? WEEKLY_FESTIVO_CAP : WEEKLY_ORDINARY_CAP
+export const getWeeklyCap = (monday: Date, festivoCount: number): number => {
+  const sunday = addDays(monday, 6)
+  const post2101 = toDateOnly(sunday) >= LEY_2101_CUTOVER
+  const baseCap = post2101 ? WEEKLY_ORDINARY_CAP_LEY2101 : WEEKLY_ORDINARY_CAP
+  return Math.max(0, baseCap - HOURS_PER_FESTIVO * festivoCount)
 }
 
 /** Conceptos de hora extra por tipo de día y franja horaria. */
@@ -733,15 +737,21 @@ export const buildTurnoRows = (
   const rowsByKey = new Map<string, TurnoRow>()
 
   for (const [, group] of groups) {
-    // ¿La semana (de inicio) contiene festivo? Festivo de calendario en cualquiera de
+    // ¿Cuántos días festivos distintos contiene la semana (de inicio)? Cada uno resta
+    // 7h al tope (ver `getWeeklyCap`). Cuenta: festivo de calendario en cualquiera de
     // sus 7 días (aunque no se trabaje), o marca manual "/DF" de un turno que inicia en
     // la semana. NO se considera la fecha física de un segmento post-medianoche, que
     // puede caer en el lunes festivo de la semana siguiente.
     const monday = new Date(`${group[0].weekKey}T00:00:00`)
-    let festivoWeek = group.some((s) => s.manualFestivo)
-    for (let d = 0; d < 7 && !festivoWeek; d += 1) {
-      if (isFestivoColombia(addDays(monday, d))) festivoWeek = true
+    const festivoDates = new Set<string>()
+    for (let d = 0; d < 7; d += 1) {
+      const day = addDays(monday, d)
+      if (isFestivoColombia(day)) festivoDates.add(toDateOnly(day))
     }
+    for (const s of group) {
+      if (s.manualFestivo) festivoDates.add(s.fechaInicio)
+    }
+    const festivoCount = festivoDates.size
 
     // Orden cronológico: por fecha y, dentro del día, por hora de entrada.
     const ordered = [...group].sort((a, b) => {
@@ -848,10 +858,10 @@ export const buildTurnoRows = (
       }
     }
 
-    // Tope ordinario de la semana: 37h/44h antes del corte de Ley 2101, 35h/42h desde
-    // esa fecha (según contenga festivo o no). Todo lo trabajado por encima se
-    // reclasifica como hora extra (31–34).
-    const weeklyCap = getWeeklyCap(monday, festivoWeek)
+    // Tope ordinario de la semana: 44h (o 42h desde el corte de Ley 2101) menos 7h por
+    // cada festivo que contenga. Todo lo trabajado por encima se reclasifica como hora
+    // extra (31–34).
+    const weeklyCap = getWeeklyCap(monday, festivoCount)
 
     for (const seg of ordered) {
       // Segmento sin horario: fila simple de paso (no acumula ni genera extra).
