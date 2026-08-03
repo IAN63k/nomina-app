@@ -16,17 +16,43 @@ import { isFestivoColombia } from "@/src/services/festivosColombia"
 export type DiaBD = "D" | "H" | "S"
 
 /**
- * Jornada ordinaria semanal cuando la semana contiene un festivo (Colombia).
- * Todo lo trabajado por encima de este tope se liquida como hora extra (31–34).
+ * Jornada ordinaria semanal cuando la semana contiene un festivo (Colombia), vigente
+ * hasta el corte de la Ley 2101 (ver `LEY_2101_CUTOVER`). A partir de esa fecha el
+ * tope pasa a `WEEKLY_FESTIVO_CAP_LEY2101`. Todo lo trabajado por encima del tope
+ * aplicable se liquida como hora extra (31–34).
  */
 export const WEEKLY_FESTIVO_CAP = 37
 
 /**
- * Jornada ordinaria semanal estándar (semana sin festivo). Todo lo trabajado por
- * encima se liquida como hora extra (31–34), igual que con el tope festivo de 37h.
- * Valor vigente en Colombia hasta jul-2026 (Ley 2101 lo baja luego a 42h).
+ * Jornada ordinaria semanal estándar (semana sin festivo), vigente hasta el corte de
+ * la Ley 2101. A partir de esa fecha el tope pasa a `WEEKLY_ORDINARY_CAP_LEY2101`.
  */
 export const WEEKLY_ORDINARY_CAP = 44
+
+/**
+ * Fecha (lunes de la semana) a partir de la cual rige la reducción de jornada de la
+ * Ley 2101: 44h → 42h ordinarias, 37h → 35h en semana con festivo. La semana se
+ * evalúa como unidad atómica por su lunes de inicio: si el lunes es anterior al
+ * corte, esa semana completa usa el tope viejo aunque el corte caiga a mitad de
+ * semana; el tope nuevo empieza recién la semana siguiente.
+ */
+export const LEY_2101_CUTOVER = "2026-07-14"
+
+/** Jornada ordinaria semanal (semana sin festivo) a partir de `LEY_2101_CUTOVER`. */
+export const WEEKLY_ORDINARY_CAP_LEY2101 = 42
+
+/** Jornada ordinaria semanal (semana con festivo) a partir de `LEY_2101_CUTOVER`. */
+export const WEEKLY_FESTIVO_CAP_LEY2101 = 35
+
+/**
+ * Tope ordinario semanal aplicable a una semana, según su lunes de inicio y si
+ * contiene festivo. Ver `LEY_2101_CUTOVER`.
+ */
+export const getWeeklyCap = (monday: Date, festivoWeek: boolean): number => {
+  const post2101 = toDateOnly(monday) >= LEY_2101_CUTOVER
+  if (post2101) return festivoWeek ? WEEKLY_FESTIVO_CAP_LEY2101 : WEEKLY_ORDINARY_CAP_LEY2101
+  return festivoWeek ? WEEKLY_FESTIVO_CAP : WEEKLY_ORDINARY_CAP
+}
 
 /** Conceptos de hora extra por tipo de día y franja horaria. */
 const EXTRA_DIURNA_ORDINARIA = 31 // L–S no festivo, 06:00–19:00
@@ -805,9 +831,10 @@ export const buildTurnoRows = (
       }
     }
 
-    // Tope ordinario de la semana: 37h si contiene festivo, 44h en una semana normal.
-    // Todo lo trabajado por encima se reclasifica como hora extra (31–34).
-    const weeklyCap = festivoWeek ? WEEKLY_FESTIVO_CAP : WEEKLY_ORDINARY_CAP
+    // Tope ordinario de la semana: 37h/44h antes del corte de Ley 2101, 35h/42h desde
+    // esa fecha (según contenga festivo o no). Todo lo trabajado por encima se
+    // reclasifica como hora extra (31–34).
+    const weeklyCap = getWeeklyCap(monday, festivoWeek)
 
     for (const seg of ordered) {
       // Segmento sin horario: fila simple de paso (no acumula ni genera extra).
