@@ -71,7 +71,11 @@ const addDays = (date: Date, days: number) => {
  *  - "N" se resuelve por horas: ≥8 → N1 (21:00–06:00); 1‑7 → N2 (22:00–06:00); 0 → sin turno.
  *  - código de turno (no ausencia) con 0 horas → sin turno (evita recargo espurio).
  */
-const resolveAuxCell = (rawCode: unknown, rawHours: unknown): { code: string; hours: number; festivo: boolean } => {
+const resolveAuxCell = (
+  rawCode: unknown,
+  rawHours: unknown,
+  extraCodes?: Iterable<string>
+): { code: string; hours: number; festivo: boolean } => {
   const raw = String(rawCode ?? "").trim()
   const hours = Number.isFinite(Number(rawHours)) ? Number(rawHours) : 0
   if (!raw) return { code: "", hours: 0, festivo: false }
@@ -84,7 +88,7 @@ const resolveAuxCell = (rawCode: unknown, rawHours: unknown): { code: string; ho
     base = hours >= 8 ? "N1" : hours > 0 ? "N2" : ""
   }
 
-  const code = normalizeAuxCode(base)
+  const code = normalizeAuxCode(base, extraCodes)
   if (!code) return { code: "", hours, festivo }
 
   // Turno con horario pero 0 horas → tratar como sin turno (no genera recargo).
@@ -113,7 +117,7 @@ const blankRow = (medico: string, date: Date, resolved: { code: string; hours: n
   festivo: resolved.festivo || undefined,
 })
 
-const parseSheet = (rows: unknown[][]): MonthSchedule[] => {
+const parseSheet = (rows: unknown[][], extraCodes?: Iterable<string>): MonthSchedule[] => {
   const out: TurnoRow[] = []
   let i = 0
   // Lunes del bloque anterior. Las semanas están apiladas de forma contigua, así que
@@ -165,7 +169,7 @@ const parseSheet = (rows: unknown[][]): MonthSchedule[] => {
 
       for (let d = 0; d < 7; d += 1) {
         const codeCol = 1 + d * 2
-        const resolved = resolveAuxCell(row[codeCol], row[codeCol + 1])
+        const resolved = resolveAuxCell(row[codeCol], row[codeCol + 1], extraCodes)
         out.push(blankRow(name, addDays(monday, d), resolved))
       }
     }
@@ -173,18 +177,22 @@ const parseSheet = (rows: unknown[][]): MonthSchedule[] => {
     i = j
   }
 
-  return buildMonthsFromRows(out, normalizeAuxCode)
+  return buildMonthsFromRows(out, (value) => normalizeAuxCode(value, extraCodes))
 }
 
-export const parseAuxiliaresFile = async (file: File): Promise<MonthSchedule[]> => {
+/**
+ * `extraCodes`: turnos personalizados vigentes (`AuxiliaresTurnosContext.turnosCodes`),
+ * para que el Excel reconozca códigos como "ET" además del catálogo por defecto.
+ */
+export const parseAuxiliaresFile = async (file: File, extraCodes?: Iterable<string>): Promise<MonthSchedule[]> => {
   if (!isValidMime(file)) {
     throw new Error("El archivo debe ser .xlsx")
   }
   const buffer = await file.arrayBuffer()
-  return parseAuxiliaresBuffer(buffer)
+  return parseAuxiliaresBuffer(buffer, extraCodes)
 }
 
-export const parseAuxiliaresBuffer = (buffer: ArrayBuffer): MonthSchedule[] => {
+export const parseAuxiliaresBuffer = (buffer: ArrayBuffer, extraCodes?: Iterable<string>): MonthSchedule[] => {
   const workbook = XLSX.read(buffer, { type: "array" })
   if (!workbook.SheetNames.length) {
     throw new Error("No se encontraron hojas en el archivo")
@@ -199,5 +207,5 @@ export const parseAuxiliaresBuffer = (buffer: ArrayBuffer): MonthSchedule[] => {
   }
 
   const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, { header: 1, raw: true, blankrows: false })
-  return parseSheet(rows)
+  return parseSheet(rows, extraCodes)
 }

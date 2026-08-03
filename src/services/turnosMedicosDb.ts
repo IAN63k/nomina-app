@@ -22,10 +22,21 @@ export type TurnoMedicoRow = TurnoRow
 
 const KNOWN_SHIFT_CODES: ShiftCode[] = ["", "M", "T", "N", "L", "A"]
 
-const normalizeShiftCode = (value: string): ShiftCode => {
+/**
+ * `extraCodes`: turnos personalizados vigentes (`MedicosTurnosContext.turnosCodes`).
+ * Sin esto, un código como "ET" se pierde al recargar desde BD (la celda queda con
+ * código "" y sus horas pasan como concepto 0 "sin turno", que no participa del tope
+ * semanal ni genera hora extra aunque esté correctamente configurado y asignado).
+ */
+const normalizeShiftCode = (value: string, extraCodes?: Iterable<string>): string => {
   const upper = (value ?? "").trim().toUpperCase()
   if (KNOWN_SHIFT_CODES.includes(upper as ShiftCode)) {
-    return upper as ShiftCode
+    return upper
+  }
+  if (extraCodes) {
+    for (const code of extraCodes) {
+      if ((code ?? "").trim().toUpperCase() === upper) return upper
+    }
   }
   return ""
 }
@@ -180,5 +191,6 @@ export async function fetchTurnosMedicos() {
 
 export const mapDbRowsToMonths = (
   rows: TurnoMedicoRow[],
-  hoursByCode?: Record<string, number>
-): MonthSchedule[] => buildMonthsFromRows(rows, normalizeShiftCode, hoursByCode)
+  hoursByCode?: Record<string, number>,
+  customCodes?: Iterable<string>
+): MonthSchedule[] => buildMonthsFromRows(rows, (value) => normalizeShiftCode(value, customCodes), hoursByCode)

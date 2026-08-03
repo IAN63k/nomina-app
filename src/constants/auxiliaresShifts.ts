@@ -99,8 +99,23 @@ export const AUX_ABSENCE_CODES = new Set(["L", "V", "F", "INCAP", "INCP", "CALAM
 
 const KNOWN_AUX_CODES = new Set(AUX_SHIFT_CODES)
 
-/** Valida/normaliza un código ya resuelto (M1, T1, N1, L, …). Desconocido → "". */
-export const normalizeAuxCode = (value: string): string => {
+/**
+ * Valida/normaliza un código ya resuelto (M1, T1, N1, L, …). Desconocido → "".
+ *
+ * `extraCodes` son los turnos personalizados vigentes (creados vía "Agregar un turno
+ * personalizado" en Ajustes, ver `AuxiliaresTurnosContext.turnosCodes`). Sin esto, un
+ * código como "ET" se pierde tanto al importar el Excel (`auxiliaresParser.ts`) como al
+ * recargar desde BD (`buildMonthsFromRows`): la celda queda con código "" y sus horas
+ * pasan como concepto 0 "sin turno", que no participa del tope semanal ni genera hora
+ * extra aunque esté correctamente configurado y asignado.
+ */
+export const normalizeAuxCode = (value: string, extraCodes?: Iterable<string>): string => {
   const upper = (value ?? "").trim().toUpperCase()
-  return KNOWN_AUX_CODES.has(upper) ? upper : ""
+  if (KNOWN_AUX_CODES.has(upper)) return upper
+  if (extraCodes) {
+    for (const code of extraCodes) {
+      if ((code ?? "").trim().toUpperCase() === upper) return upper
+    }
+  }
+  return ""
 }

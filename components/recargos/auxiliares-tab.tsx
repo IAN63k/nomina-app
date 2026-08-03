@@ -62,7 +62,12 @@ export function RecargosAuxiliaresTab() {
     toggleSortDirection,
     updateShift,
     setMonthsData,
-  } = useSchedule({ hoursByCode, parseFile: parseAuxiliaresFile })
+  } = useSchedule({
+    hoursByCode,
+    // Sin `turnosCodes`, el parser solo reconoce el catálogo por defecto (M1/T1/N1/…):
+    // un turno personalizado (p. ej. "ET") del Excel se descartaría silenciosamente.
+    parseFile: (file) => parseAuxiliaresFile(file, turnosCodes),
+  })
 
   const totalDbRows = useMemo(
     () =>
@@ -115,6 +120,8 @@ export function RecargosAuxiliaresTab() {
   // subidos sin guardar) cada vez que cambie la configuración de turnos.
   const hoursByCodeRef = useRef(hoursByCode)
   hoursByCodeRef.current = hoursByCode
+  const turnosCodesRef = useRef(turnosCodes)
+  turnosCodesRef.current = turnosCodes
 
   useEffect(() => {
     // Esperar a que el catálogo de turnos personalizados termine de hidratarse antes de
@@ -142,7 +149,7 @@ export function RecargosAuxiliaresTab() {
           return
         }
 
-        const mappedMonths = mapDbRowsToAuxMonths(rows, hoursByCodeRef.current)
+        const mappedMonths = mapDbRowsToAuxMonths(rows, hoursByCodeRef.current, turnosCodesRef.current)
         if (mappedMonths.length) {
           setMonthsData(mappedMonths)
           setDbMessage(`Se cargaron ${rows.length} registros guardados en la base de datos.`)
@@ -228,7 +235,7 @@ export function RecargosAuxiliaresTab() {
       }
 
       const rows = await fetchTurnosAuxiliares()
-      const mappedMonths = mapDbRowsToAuxMonths(rows, hoursByCodeRef.current)
+      const mappedMonths = mapDbRowsToAuxMonths(rows, hoursByCodeRef.current, turnosCodesRef.current)
       setMonthsData(mappedMonths)
       setUltimaEliminacion(null)
       setDbMessage(`Se restauraron ${restored} filas desde la papelera.`)

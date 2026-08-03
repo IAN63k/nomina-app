@@ -183,7 +183,13 @@ export async function fetchTurnosAuxiliares() {
   return all
 }
 
+/**
+ * `customCodes`: turnos personalizados vigentes (`AuxiliaresTurnosContext.turnosCodes`).
+ * Sin esto, `normalizeAuxCode` no reconoce un código como "ET" y la celda se recarga con
+ * código "" (perdiendo la asignación) aunque esté guardado en `turnos_auxiliares`.
+ */
 export const mapDbRowsToAuxMonths = (
   rows: TurnoAuxiliarRow[],
-  hoursByCode?: Record<string, number>
-): MonthSchedule[] => buildMonthsFromRows(rows, normalizeAuxCode, hoursByCode)
+  hoursByCode?: Record<string, number>,
+  customCodes?: Iterable<string>
+): MonthSchedule[] => buildMonthsFromRows(rows, (value) => normalizeAuxCode(value, customCodes), hoursByCode)
