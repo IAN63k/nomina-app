@@ -51,18 +51,42 @@ const isValidTurnoCode = (code: string): boolean => {
   return /^[A-Z]{1,3}$/.test(code)
 }
 
+/** Horas de reloj entre entrada y salida (`HH:MM`), asumiendo cruce de medianoche si salida <= entrada. */
+const computeClockHours = (entrada: string, salida: string): number => {
+  const toMinutes = (value: string) => {
+    const [h, m] = value.split(":").map(Number)
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null
+    return h * 60 + m
+  }
+  const start = toMinutes(entrada)
+  const end = toMinutes(salida)
+  if (start === null || end === null) return 0
+  const diffMinutes = end > start ? end - start : 1440 - start + end
+  return Math.round((diffMinutes / 60) * 100) / 100
+}
+
 export function MedicosTurnosProvider({ children }: { children: ReactNode }) {
   const [turnos, setTurnos] = useState<TurnosMap>(DEFAULT_TURNOS)
   const [turnosCodes, setTurnosCodes] = useState<string[]>(DEFAULT_CODES)
 
   const setTurno = (code: string, patch: Partial<TurnoConfig>) => {
-    setTurnos((prev) => ({
-      ...prev,
-      [code]: {
-        ...prev[code],
-        ...patch,
-      },
-    }))
+    setTurnos((prev) => {
+      const next = { ...prev[code], ...patch }
+      // Autocompleta "Total" cuando terminan de configurarse entrada y salida de un
+      // turno cuyo total sigue en el "0" por defecto (típicamente uno recién creado
+      // desde "Agregar un turno personalizado"): sin esto, el turno queda con 0 horas
+      // oficiales y no cuenta para el tope semanal ni genera recargo/extra al usarlo.
+      if (
+        (patch.entrada !== undefined || patch.salida !== undefined) &&
+        next.entrada &&
+        next.salida &&
+        parseHours(next.total ?? "0") === 0
+      ) {
+        const computed = computeClockHours(next.entrada, next.salida)
+        if (computed > 0) next.total = String(computed)
+      }
+      return { ...prev, [code]: next }
+    })
   }
 
   const addTurno = (code: string, config: TurnoConfig): boolean => {
