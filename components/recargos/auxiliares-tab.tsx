@@ -67,6 +67,7 @@ export function RecargosAuxiliaresTab() {
     // Sin `turnosCodes`, el parser solo reconoce el catálogo por defecto (M1/T1/N1/…):
     // un turno personalizado (p. ej. "ET") del Excel se descartaría silenciosamente.
     parseFile: (file) => parseAuxiliaresFile(file, turnosCodes),
+    filterStorageKey: "auxiliares",
   })
 
   const totalDbRows = useMemo(
@@ -113,7 +114,7 @@ export function RecargosAuxiliaresTab() {
   }, [allRows, getCedulaByName])
 
   // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
-  const period = usePeriodFilter(allRowsWithCedula)
+  const period = usePeriodFilter(allRowsWithCedula, "nomina:recargos-period:auxiliares")
 
   // La carga desde BD corre una sola vez al montar; leemos el catálogo de horas vía ref
   // para reconstruir con horas oficiales sin re-disparar el fetch (que pisaría datos

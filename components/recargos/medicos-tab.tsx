@@ -56,6 +56,7 @@ export function RecargosMedicosTab() {
     // Sin `turnosCodes`, el parser solo reconoce M/T/N/L/A: un turno personalizado
     // (p. ej. "ET") del Excel se descartaría silenciosamente.
     parseFile: (file) => parseExcelFile(file, turnosCodes),
+    filterStorageKey: "medicos",
   })
 
   const totalDbRows = useMemo(
@@ -104,7 +105,7 @@ export function RecargosMedicosTab() {
   }, [allRows, getCedulaByName])
 
   // Periodo/quincena compartido por la tabla de detalle y el menú de exportación.
-  const period = usePeriodFilter(allRowsWithCedula)
+  const period = usePeriodFilter(allRowsWithCedula, "nomina:recargos-period:medicos")
 
   // La carga desde BD corre una sola vez al montar; leemos el catálogo de horas vía ref
   // para reconstruir con horas oficiales sin re-disparar el fetch al cambiar la config.
