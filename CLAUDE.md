@@ -85,6 +85,8 @@ The Recargos page (`/recargos`) has two tabs that share one pure calculation eng
 
 The `recargoConfig` (night window + discount) lives in `SettingsSidebarContext` and is **shared** by both tabs. The Core Data Flow above describes the Médicos path; Auxiliares mirrors it through the same engine.
 
+**Turnos personalizados (custom shift catalog)**: `MedicosTurnosContext`/`AuxiliaresTurnosContext` hold the editable turno catalog (código → entrada/salida/total/descripción). Custom entries (added via "Agregar un turno personalizado" in Ajustes) persist to Supabase table `turnos_catalogo` (`modulo`, `codigo` → entrada/salida/total/descripcion; `src/services/turnosCatalogoDb.ts`, `docs/turnos_catalogo.sql`) — shared across all users/sessions, since it's used to interpret `turno_codigo` values already saved in `turnos_medicos`/`turnos_auxiliares`. **Without this the custom turno's schedule was lost on every reload**: `recargoEngine.splitTurnoTimes` couldn't resolve its entrada/salida (code missing from `turnosByCode`), so it silently computed 0 hours — no recargo, no extra, even though the shift was assigned in the grid. Default codes (M/T/N/L/A, M1/M2/…) are never written to this table — only turnos outside `DEFAULT_CODES`/`AUX_DEFAULT_CODES`. Writes are debounced (500ms) on edit, immediate on add/remove; "Restaurar valores por defecto" also purges the module's custom rows from BD.
+
 ### Cartas de Vacaciones Module (`/vacaciones`)
 
 Mail-merge that generates one vacation letter per employee, porting the Python tool in `docs/cartas/` (`generar_cartas_referencia.py`). A Word template with `{MARKER}` placeholders is combined with an Excel sheet whose headers match those markers exactly.

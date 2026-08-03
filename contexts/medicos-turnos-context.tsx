@@ -1,10 +1,16 @@
 "use client"
 
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 
 import { SHIFT_CODES, SHIFT_DETAILS } from "@/src/constants/shifts"
 import { ConcreteShiftCode } from "@/src/constants/shifts"
 import { ShiftCode } from "@/src/types/schedule"
+import {
+  deleteAllTurnosCatalogo,
+  deleteTurnoCatalogo,
+  fetchTurnosCatalogo,
+  upsertTurnoCatalogo,
+} from "@/src/services/turnosCatalogoDb"
 
 type TurnoConfig = {
   entrada: string
@@ -68,6 +74,44 @@ const computeClockHours = (entrada: string, salida: string): number => {
 export function MedicosTurnosProvider({ children }: { children: ReactNode }) {
   const [turnos, setTurnos] = useState<TurnosMap>(DEFAULT_TURNOS)
   const [turnosCodes, setTurnosCodes] = useState<string[]>(DEFAULT_CODES)
+  const catalogTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  // Hidratar turnos personalizados guardados en BD (compartidos entre usuarios/sesiones).
+  useEffect(() => {
+    let cancelled = false
+    fetchTurnosCatalogo("medicos")
+      .then((fetched) => {
+        if (cancelled) return
+        const customEntries = Object.entries(fetched).filter(([code]) => !DEFAULT_CODES.includes(code))
+        if (!customEntries.length) return
+        setTurnos((prev) => {
+          const next = { ...prev }
+          customEntries.forEach(([code, config]) => { next[code] = config })
+          return next
+        })
+        setTurnosCodes((prev) => {
+          const codes = new Set(prev)
+          customEntries.forEach(([code]) => codes.add(code))
+          return Array.from(codes).sort()
+        })
+      })
+      .catch(() => {
+        // Sin catálogo persistido o Supabase no disponible: se mantienen los turnos por defecto.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const persistTurno = (code: string, config: TurnoConfig) => {
+    if (DEFAULT_CODES.includes(code)) return
+    if (catalogTimers.current[code]) clearTimeout(catalogTimers.current[code])
+    catalogTimers.current[code] = setTimeout(() => {
+      upsertTurnoCatalogo("medicos", code, config).catch(() => {
+        // Persistencia best-effort: el turno sigue funcionando en memoria si Supabase falla.
+      })
+    }, 500)
+  }
 
   const setTurno = (code: string, patch: Partial<TurnoConfig>) => {
     setTurnos((prev) => {
@@ -85,6 +129,7 @@ export function MedicosTurnosProvider({ children }: { children: ReactNode }) {
         const computed = computeClockHours(next.entrada, next.salida)
         if (computed > 0) next.total = String(computed)
       }
+      persistTurno(code, next)
       return { ...prev, [code]: next }
     })
   }
@@ -98,6 +143,9 @@ export function MedicosTurnosProvider({ children }: { children: ReactNode }) {
       [code]: config,
     }))
     setTurnosCodes((prev) => [...prev, code].sort())
+    upsertTurnoCatalogo("medicos", code, config).catch(() => {
+      // Persistencia best-effort: el turno sigue funcionando en memoria si Supabase falla.
+    })
     return true
   }
 
@@ -111,12 +159,24 @@ export function MedicosTurnosProvider({ children }: { children: ReactNode }) {
       return newTurnos
     })
     setTurnosCodes((prev) => prev.filter((c) => c !== code))
+    if (catalogTimers.current[code]) {
+      clearTimeout(catalogTimers.current[code])
+      delete catalogTimers.current[code]
+    }
+    deleteTurnoCatalogo("medicos", code).catch(() => {
+      // Persistencia best-effort: la eliminación local ya aplicó.
+    })
     return true
   }
 
   const resetTurnos = () => {
     setTurnos(DEFAULT_TURNOS)
     setTurnosCodes(DEFAULT_CODES)
+    Object.values(catalogTimers.current).forEach(clearTimeout)
+    catalogTimers.current = {}
+    deleteAllTurnosCatalogo("medicos").catch(() => {
+      // Persistencia best-effort: el reset local ya aplicó.
+    })
   }
 
   const isDefaultTurno = (code: string): boolean => {
