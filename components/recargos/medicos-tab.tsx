@@ -22,7 +22,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { computeDisplayRows, deleteTurnosMedicos, fetchTurnosMedicos, getUltimaEliminacionMedicos, mapDbRowsToMonths, mapMonthsToTurnosRows, restaurarTurnosMedicos, upsertTurnosMedicos, type UltimaEliminacion } from "@/src/services/turnosMedicosDb"
 
 export function RecargosMedicosTab() {
-  const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useMedicosTurnos()
+  const { hoursByCode, timeRangeByCode, turnosCodes, turnos, catalogLoaded } = useMedicosTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const { colorOf } = useAppearance()
   const { user } = useAuth()
@@ -106,6 +106,13 @@ export function RecargosMedicosTab() {
   hoursByCodeRef.current = hoursByCode
 
   useEffect(() => {
+    // Esperar a que el catálogo de turnos personalizados termine de hidratarse antes de
+    // reconstruir `months` desde BD: si se reconstruye primero, un turno personalizado
+    // (p. ej. "ET") que aún no llegó de turnos_catalogo calcula 0 horas oficiales, y ese
+    // valor queda fijo en la celda hasta el próximo reload (no se recalcula solo al
+    // llegar el catálogo después).
+    if (!catalogLoaded) return
+
     let isMounted = true
 
     const loadFromDb = async () => {
@@ -145,7 +152,7 @@ export function RecargosMedicosTab() {
     return () => {
       isMounted = false
     }
-  }, [setMonthsData])
+  }, [setMonthsData, catalogLoaded])
 
   const handleFileWithSaveSuggestion = async (file: File) => {
     setDbError(null)
