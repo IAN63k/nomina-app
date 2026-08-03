@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
+import { useLocalStorageState } from "@/src/hooks/useLocalStorageState"
 
 const pad2 = (n: number) => String(n).padStart(2, "0")
 
@@ -9,11 +10,12 @@ const pad2 = (n: number) => String(n).padStart(2, "0")
  * Estado de filtrado por periodo/quincena compartido por la tabla de detalle (que
  * muestra el selector) y el menú de exportación (que vive arriba, junto a las
  * pestañas de mes). Ambos consumen el MISMO estado para que el export respete la
- * quincena elegida en la tabla.
+ * quincena elegida en la tabla. Persiste en localStorage bajo `storageKey` (p. ej.
+ * `nomina:recargos-period:medicos`) para que sobreviva a un refresh de página.
  */
-export function usePeriodFilter(rows: TurnoMedicoRow[]) {
-  const [periodFrom, setPeriodFrom] = useState("")
-  const [periodTo, setPeriodTo] = useState("")
+export function usePeriodFilter(rows: TurnoMedicoRow[], storageKey: string) {
+  const [periodFrom, setPeriodFrom] = useLocalStorageState<string>(`${storageKey}:from`, "")
+  const [periodTo, setPeriodTo] = useLocalStorageState<string>(`${storageKey}:to`, "")
 
   // Mes dominante de las filas. Un turno partido derrama su cola post-medianoche al día
   // siguiente; imputamos por la fecha de INICIO (`fechaInicio`) para que ese cruce cuente

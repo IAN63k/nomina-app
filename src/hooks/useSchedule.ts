@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { SHIFT_DEFAULT_HOURS } from "@/src/constants/shifts";
 import { parseExcelFile } from "@/src/services/excelParser";
 import { DoctorSchedule, MonthSchedule } from "@/src/types/schedule";
+import { useLocalStorageState } from "@/src/hooks/useLocalStorageState";
 
 type SortDirection = "asc" | "desc";
 
@@ -15,6 +16,12 @@ type UseScheduleOptions = {
   hoursByCode?: Partial<Record<string, number>>;
   /** Parser del archivo. Default: `parseExcelFile` (formato de médicos). */
   parseFile?: (file: File) => Promise<MonthSchedule[]>;
+  /**
+   * Persiste la búsqueda y el orden del resumen (`DoctorSummary`) en localStorage bajo
+   * esta clave, para que sobrevivan a un refresh de página. Sin ella, quedan solo en
+   * memoria (comportamiento previo).
+   */
+  filterStorageKey?: string;
 };
 
 const initialCounts = (): Record<string, number> => ({});
@@ -75,8 +82,9 @@ export function useSchedule(options?: UseScheduleOptions) {
   const [activeMonthIndex, setActiveMonthIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const filterStorageKey = `nomina:schedule-summary:${options?.filterStorageKey ?? "default"}`;
+  const [search, setSearch] = useLocalStorageState<string>(`${filterStorageKey}:search`, "");
+  const [sortDirection, setSortDirection] = useLocalStorageState<SortDirection>(`${filterStorageKey}:sort`, "desc");
 
   const handleFile = async (file: File) => {
     setError(null);

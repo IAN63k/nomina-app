@@ -6,6 +6,7 @@ import type { TurnoMedicoRow } from "@/src/services/turnosMedicosDb"
 import { loadRecargosDetailPrefs, saveRecargosDetailPrefs, type RecargosDetailPrefs } from "@/src/services/userPreferences"
 import type { ShiftModule } from "@/src/constants/shiftColors"
 import type { PeriodFilter } from "@/src/hooks/usePeriodFilter"
+import { useLocalStorageState } from "@/src/hooks/useLocalStorageState"
 import { AUX_ABSENCE_CODES, AUX_SHIFT_DETAILS } from "@/src/constants/auxiliaresShifts"
 import { useAppearance } from "@/contexts/appearance-context"
 import {
@@ -170,12 +171,16 @@ export function TurnosDetailTable({ period, module = "medicos" }: Props) {
     periodRows,
   } = period
 
-  const [search, setSearch]               = useState("")
-  const [filters, setFilters]             = useState<Record<string, string>>({})
+  // Búsqueda, filtros por columna y orden persisten en localStorage por módulo, para
+  // que sobrevivan a un refresh de página (a diferencia de `page`, que se resetea a
+  // propósito: la página exacta no tiene sentido conservarla entre sesiones distintas).
+  const filtersStorageKey = `nomina:recargos-filters:${module}`
+  const [search, setSearch]               = useLocalStorageState<string>(`${filtersStorageKey}:search`, "")
+  const [filters, setFilters]             = useLocalStorageState<Record<string, string>>(`${filtersStorageKey}:columns`, {})
   const [page, setPage]                   = useState(1)
   const [pageSize, setPageSize]           = useState(20)
-  const [sortCol, setSortCol]             = useState<string>("fecha")
-  const [sortDir, setSortDir]             = useState<SortDir>("asc")
+  const [sortCol, setSortCol]             = useLocalStorageState<string>(`${filtersStorageKey}:sortCol`, "fecha")
+  const [sortDir, setSortDir]             = useLocalStorageState<SortDir>(`${filtersStorageKey}:sortDir`, "asc")
 
   // Preferencias persistidas por módulo (flexibilidad y eficiencia de uso):
   // columnas visibles, filtro "sin recargo" y tamaño de página. Se cargan en un
