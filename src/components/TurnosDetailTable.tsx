@@ -38,6 +38,7 @@ const CONCEPTO_LABELS: Record<number, string> = {
   35: "Rec. Dom. Nocturno",
   36: "Rec. Lab. Nocturno",
   39: "Horas Dominicales",
+  40: "Horas Festivas",
   0: "—",
 }
 

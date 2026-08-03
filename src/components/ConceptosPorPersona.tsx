@@ -24,6 +24,7 @@ const CONCEPTOS: Array<{ code: number; label: string; group: "Hora extra" | "Rec
   { code: 35, label: "Rec. Dom. Nocturno",   group: "Recargo",    color: "#8b5cf6" },
   { code: 36, label: "Rec. Lab. Nocturno",   group: "Recargo",    color: "#3b82f6" },
   { code: 39, label: "Horas Dominicales",    group: "Recargo",    color: "#f43f5e" },
+  { code: 40, label: "Horas Festivas",       group: "Recargo",    color: "#14b8a6" },
 ]
 
 const conceptoMeta = (code: number) =>
