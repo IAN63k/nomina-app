@@ -62,7 +62,7 @@ Two component areas coexist due to ongoing migration:
 
 ### Recargo (Overtime Premium)
 
-Configurable night window (default 19:00–06:00). When a shift crosses into the night window, premium hours (`horasrecargo`) are computed automatically. Conceptos 35/36/39 classify the overtime type for accounting.
+Configurable night window (default 19:00–06:00). When a shift crosses into the night window, premium hours (`horasrecargo`) are computed automatically. Conceptos 35/36/39/40 classify the overtime type for accounting: **35** recargo dominical nocturno, **36** recargo laboral nocturno, **39** horas dominicales (diurno, domingo real), **40** horas festivas (diurno, festivo de calendario o `/DF` que **no** cae en domingo — mismo monto que 39, distinto concepto solo para detalle/TXT).
 
 `recargoConfig.nightDiffHours` (default 1) es el **refrigerio nocturno**, y opera sobre un eje distinto de las horas oficiales: descuenta la hora no trabajada del **premio nocturno** (`horasrecargo` de los conceptos 35/36 del tramo post-medianoche). No es doble descuento respecto a las 9h del catálogo — uno rige la jornada, el otro el recargo.
 

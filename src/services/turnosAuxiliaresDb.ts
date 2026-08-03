@@ -3,7 +3,8 @@
  *
  * Reutiliza exactamente la misma lógica de recargo y partición por medianoche que
  * Médicos, añadiendo el manejo de festivos (códigos "/DF"): un día festivo se calcula
- * con las ventanas dominicales (conceptos 35/39). Persiste en la tabla `turnos_auxiliares`.
+ * con las ventanas dominicales (concepto 35 nocturno, 39/40 diurno según sea domingo o
+ * festivo). Persiste en la tabla `turnos_auxiliares`.
  */
 
 import { MonthSchedule } from "@/src/types/schedule"

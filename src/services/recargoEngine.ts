@@ -60,6 +60,14 @@ const EXTRA_NOCTURNA_ORDINARIA = 32 // L–S no festivo, 19:00–06:00
 const EXTRA_DIURNA_FESTIVA = 33 // domingo/festivo, 06:00–19:00
 const EXTRA_NOCTURNA_FESTIVA = 34 // domingo/festivo, 19:00–06:00
 
+/** Concepto de recargo diurno dominical (domingo). Se paga igual que el festivo. */
+const CONCEPTO_HORAS_DOMINICALES = 39
+/**
+ * Concepto de recargo diurno festivo (festivo de calendario o /DF que NO cae en
+ * domingo). Se liquida igual que 39 — es solo para distinguir en detalle/TXT.
+ */
+const CONCEPTO_HORAS_FESTIVAS = 40
+
 export type TurnoHorario = {
   entrada: string
   salida: string
@@ -229,7 +237,7 @@ const normalizeRecargoConfig = (config?: RecargoConfig) => ({
   ...(config ?? {}),
 })
 
-const getRecargoWindows = (dia: DiaBD, config: RecargoConfig) => {
+const getRecargoWindows = (dia: DiaBD, config: RecargoConfig, diurnoConcepto: number = CONCEPTO_HORAS_DOMINICALES) => {
   const nightStart = toMinutes(config.nightStart) ?? toMinutes(DEFAULT_RECARGO_CONFIG.nightStart) ?? 1140
   const nightEnd = toMinutes(config.nightEnd) ?? toMinutes(DEFAULT_RECARGO_CONFIG.nightEnd) ?? 360
 
@@ -239,11 +247,11 @@ const getRecargoWindows = (dia: DiaBD, config: RecargoConfig) => {
   if (dia === "D") {
     if (crossesDay) {
       windows.push({ start: 0, end: nightEnd, concepto: 35 })
-      windows.push({ start: nightEnd, end: nightStart, concepto: 39 })
+      windows.push({ start: nightEnd, end: nightStart, concepto: diurnoConcepto })
       windows.push({ start: nightStart, end: 1440, concepto: 35 })
     } else {
       windows.push({ start: nightStart, end: nightEnd, concepto: 35 })
-      windows.push({ start: nightEnd, end: nightStart, concepto: 39 })
+      windows.push({ start: nightEnd, end: nightStart, concepto: diurnoConcepto })
     }
   } else {
     if (crossesDay) {
@@ -328,9 +336,10 @@ const recargoPartsByConcepto = (
   dia: DiaBD,
   fromMin: number,
   toMin: number,
-  config: RecargoConfig
+  config: RecargoConfig,
+  diurnoConcepto: number = CONCEPTO_HORAS_DOMINICALES
 ): Map<number, { mins: number; ranges: MinuteRange[] }> => {
-  const windows = getRecargoWindows(dia, config)
+  const windows = getRecargoWindows(dia, config, diurnoConcepto)
   const parts = splitByWindows(fromMin, toMin, windows)
 
   const byConcepto = new Map<number, { mins: number; ranges: MinuteRange[] }>()
@@ -483,6 +492,7 @@ type Segment = {
   weekKey: string // semana (lunes) del DÍA DE INICIO del turno, para el tope semanal
   effectiveDia: DiaBD // domingo o festivo → "D"; alimenta recargo, extras y la columna Día
   festivo: boolean // marca de festivo de la FILA (calendario o /DF en la fecha física)
+  festivoNoDominical: boolean // festivo (calendario o /DF) que NO cae en domingo; usa concepto 40 en vez de 39
   manualFestivo: boolean // solo marca manual "/DF" del turno; dispara el tope semanal
   startMin: number | null // null = sin horario configurado
   endMin: number | null
@@ -663,6 +673,9 @@ export const buildTurnoRows = (
             weekKey: mondayKey(date),
             effectiveDia,
             festivo: festivoFecha,
+            // Festivo real (calendario o /DF) que no es domingo: la franja diurna se
+            // liquida igual que la dominical pero con concepto 40, no 39.
+            festivoNoDominical: festivoFecha && realDia !== "D",
             manualFestivo,
             startMin: sMin,
             endMin: eMin,
@@ -739,7 +752,7 @@ export const buildTurnoRows = (
     let cumulative = 0
 
     // Emite la parte ordinaria del tramo [from, to] como UNA fila por concepto de
-    // recargo (35/36/39), más una fila neutra (concepto 0) por las horas base sin
+    // recargo (35/36/39/40), más una fila neutra (concepto 0) por las horas base sin
     // recargo. El descuento nocturno (`nightDiffHours`) se aplica al concepto
     // nocturno (35/36) del segmento posterior a la medianoche.
     const emitOrdinary = (
@@ -750,7 +763,11 @@ export const buildTurnoRows = (
       segSalida: string | null,
       officialHoras: number
     ) => {
-      const partsByConcepto = recargoPartsByConcepto(seg.effectiveDia, from, to, config)
+      // El tramo diurno se liquida igual en domingo o festivo, pero con concepto
+      // distinto: 39 (dominical) vs. 40 (festivo que no cae en domingo) — solo para
+      // distinguirlos en el detalle y el TXT, sin cambiar el monto.
+      const diurnoConcepto = seg.festivoNoDominical ? CONCEPTO_HORAS_FESTIVAS : CONCEPTO_HORAS_DOMINICALES
+      const partsByConcepto = recargoPartsByConcepto(seg.effectiveDia, from, to, config, diurnoConcepto)
       let diffMins = seg.diffHours > 0 ? Math.round(seg.diffHours * 60) : 0
 
       // Igual que `emitExtra`: la franja [from, to] es de reloj, pero las HORAS deben
