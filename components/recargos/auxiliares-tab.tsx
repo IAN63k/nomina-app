@@ -34,7 +34,7 @@ import {
 import { AUX_SHIFT_CODES, AUX_SHIFT_COLOR_BY_CODE, AUX_SHIFT_DETAILS } from "@/src/constants/auxiliaresShifts"
 
 export function RecargosAuxiliaresTab() {
-  const { hoursByCode, timeRangeByCode, turnosCodes, turnos } = useAuxiliaresTurnos()
+  const { hoursByCode, timeRangeByCode, turnosCodes, turnos, catalogLoaded } = useAuxiliaresTurnos()
   const { recargoConfig } = useSettingsSidebar()
   const { colorOf } = useAppearance()
   const { user } = useAuth()
@@ -117,6 +117,13 @@ export function RecargosAuxiliaresTab() {
   hoursByCodeRef.current = hoursByCode
 
   useEffect(() => {
+    // Esperar a que el catálogo de turnos personalizados termine de hidratarse antes de
+    // reconstruir `months` desde BD: si se reconstruye primero, un turno personalizado
+    // que aún no llegó de turnos_catalogo calcula 0 horas oficiales, y ese valor queda
+    // fijo en la celda hasta el próximo reload (no se recalcula solo al llegar el
+    // catálogo después).
+    if (!catalogLoaded) return
+
     let isMounted = true
 
     const loadFromDb = async () => {
@@ -156,7 +163,7 @@ export function RecargosAuxiliaresTab() {
     return () => {
       isMounted = false
     }
-  }, [setMonthsData])
+  }, [setMonthsData, catalogLoaded])
 
   const handleFileWithSaveSuggestion = async (file: File) => {
     setDbError(null)

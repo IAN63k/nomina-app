@@ -26,6 +26,15 @@ type AuxiliaresTurnosContextType = {
   hoursByCode: Record<string, number>
   timeRangeByCode: Record<string, string>
   isDefaultTurno: (code: string) => boolean
+  /**
+   * true una vez que el catálogo de turnos personalizados terminó de hidratarse desde
+   * BD (con éxito o no). Los consumidores que reconstruyen `months` a partir de filas
+   * guardadas (medicos-tab/auxiliares-tab) deben esperar a esto antes de leer
+   * `hoursByCode`: si reconstruyen antes, un turno personalizado aún no hidratado
+   * calcula 0 horas y ese valor queda fijo en la celda hasta el próximo reload (no se
+   * recalcula solo al llegar el catálogo).
+   */
+  catalogLoaded: boolean
 }
 
 const AuxiliaresTurnosContext = createContext<AuxiliaresTurnosContextType | null>(null)
@@ -57,6 +66,7 @@ const computeClockHours = (entrada: string, salida: string): number => {
 export function AuxiliaresTurnosProvider({ children }: { children: ReactNode }) {
   const [turnos, setTurnos] = useState<TurnosMap>(AUX_DEFAULT_TURNOS)
   const [turnosCodes, setTurnosCodes] = useState<string[]>(AUX_DEFAULT_CODES)
+  const [catalogLoaded, setCatalogLoaded] = useState(false)
   const catalogTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
 
   // Hidratar turnos personalizados guardados en BD (compartidos entre usuarios/sesiones).
@@ -80,6 +90,9 @@ export function AuxiliaresTurnosProvider({ children }: { children: ReactNode }) 
       })
       .catch(() => {
         // Sin catálogo persistido o Supabase no disponible: se mantienen los turnos por defecto.
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoaded(true)
       })
     return () => {
       cancelled = true
@@ -200,6 +213,7 @@ export function AuxiliaresTurnosProvider({ children }: { children: ReactNode }) 
         hoursByCode,
         timeRangeByCode,
         isDefaultTurno,
+        catalogLoaded,
       }}
     >
       {children}
