@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { ErrorHttp, exigir, leerJson, ruta, sinError } from "@/src/lib/apiIncapacidades"
 import {
   asignarFondo,
-  evaluarAlertas,
+  evaluarYRegistrar,
   filaParaImportar,
   fondosPorIdentificacion,
   leerParametros,
@@ -88,7 +88,7 @@ export const POST = ruta("cargar_archivo", async ({ req, db, user }) => {
     p_incapacidades: vista.nuevas.map((n) => filaParaImportar(n, entidad.get(llaveIncapacidad(n.identificacion, n.nroIncapacidad)) ?? null)),
   })) as { carga_id: string; nuevas: number }
 
-  const alertas = await evaluarAlertas(db)
+  const alertas = await evaluarYRegistrar(db, "carga", user.usuario)
   return NextResponse.json({ ...resumen, nuevas: resultado.nuevas, cargaId: resultado.carga_id, alertasNuevas: alertas.nuevas }, { status: 201 })
 })
 

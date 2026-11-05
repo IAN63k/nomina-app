@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import {
   alertasDiasAcumulados,
   calcularCobro,
+  hoyBogota,
   fechaCorteEfectiva,
   llaveIncapacidad,
   pqrdVencida,
@@ -344,7 +345,10 @@ export async function evaluarAlertas(
   const [params, incs, fondos, pqrds] = await Promise.all([
     leerParametros(db), listarIncapacidades(db), fondosPorIdentificacion(db), listarPqrd(db),
   ])
-  const corte = fechaCorteEfectiva(params, ahora)
+  // Las alertas reflejan fechas reales: siempre se evalúan con HOY en Bogotá.
+  // La fecha de corte fija (cierre mensual) aplica solo a los reportes; si se
+  // usara aquí y alguien olvidara quitarla, los hitos quedarían congelados.
+  const corte = hoyBogota(ahora)
   const idPorLlave = new Map(incs.map((i) => [llaveIncapacidad(i.identificacion, i.nroIncapacidad), i.id!]))
   const incPorId = new Map(incs.map((i) => [i.id!, i]))
 
@@ -439,4 +443,38 @@ export function filaParaImportar(i: Incapacidad, entidadKactus: string | null = 
     para_revisar: i.paraRevisar,
     origen: i.origen,
   }
+}
+
+export type OrigenEvaluacion = "cron" | "manual" | "carga" | "edicion" | "parametros"
+
+/** Evalúa alertas y deja registro de la ejecución (también si falla). */
+export async function evaluarYRegistrar(db: SupabaseClient, origen: OrigenEvaluacion, usuario: string | null) {
+  const inicio = Date.now()
+  try {
+    const r = await evaluarAlertas(db)
+    await registrarEjecucion(db, { origen, usuario, corte: r.corte, evaluadas: r.evaluadas, nuevas: r.nuevas, ok: true, duracion_ms: Date.now() - inicio })
+    return r
+  } catch (e) {
+    await registrarEjecucion(db, {
+      origen, usuario, ok: false, error: (e instanceof Error ? e.message : String(e)).slice(0, 500), duracion_ms: Date.now() - inicio,
+    })
+    throw e
+  }
+}
+
+async function registrarEjecucion(db: SupabaseClient, fila: Record<string, unknown>) {
+  const { error } = await db.from("incapacidad_alertas_ejecuciones").insert(fila)
+  if (error) console.error("Registro de evaluación de alertas:", error.message)
+}
+
+/** Para el panel: alertas pendientes y estado de la tarea diaria. */
+export async function resumenAlertas(db: SupabaseClient) {
+  const [pend, ejec] = await Promise.all([
+    db.from("incapacidad_alertas").select("id", { count: "exact", head: true }).eq("estado", "Pendiente"),
+    db.from("incapacidad_alertas_ejecuciones").select("ok, created_at, error, nuevas")
+      .eq("origen", "cron").order("created_at", { ascending: false }).limit(30),
+  ])
+  if (pend.error) throw new Error(pend.error.message)
+  if (ejec.error) throw new Error(ejec.error.message)
+  return { pendientes: pend.count ?? 0, ejecucionesCron: ejec.data ?? [] }
 }

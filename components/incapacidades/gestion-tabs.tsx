@@ -5,6 +5,7 @@ import { RefreshCw, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { ParametrosIncapacidades } from "@/src/types/incapacidad"
 import { mensajeDe, pedir } from "./api"
+import { avisarCambioAlertas, useResumenAlertas } from "./alertas-pendientes"
 import { DetalleIncapacidad } from "./detalle-incapacidad"
 import { fecha, fechaHora, pesos } from "./formato"
 import { useIncapacidades } from "./incapacidades-context"
@@ -85,6 +86,7 @@ export function AlertasTab() {
   const [mensaje, setMensaje] = useState<string | null>(null)
   const [evaluando, setEvaluando] = useState(false)
   const [abierta, setAbierta] = useState<string | null>(null)
+  const resumen = useResumenAlertas()
 
   const cargar = useCallback(async () => {
     const q = new URLSearchParams()
@@ -106,8 +108,9 @@ export function AlertasTab() {
     setEvaluando(true); setMensaje(null)
     try {
       const r = await pedir<{ nuevas: number; corte: string }>("/api/incapacidades/alertas/evaluar", { method: "POST" })
-      setMensaje(r.nuevas ? `Se generaron ${r.nuevas} alerta(s) nueva(s) con corte ${fecha(r.corte)}.` : `Sin alertas nuevas (corte ${fecha(r.corte)}).`)
+      setMensaje(r.nuevas ? `Se generaron ${r.nuevas} alerta(s) nueva(s) al ${fecha(r.corte)}.` : `Sin alertas nuevas al ${fecha(r.corte)}.`)
       await cargar()
+      avisarCambioAlertas()
     } catch (e) {
       setError(mensajeDe(e))
     } finally {
@@ -118,9 +121,10 @@ export function AlertasTab() {
   return (
     <div className="space-y-4">
       <Aviso>
-        Hitos de 90, 120, 150 y 180 días acumulados (y aviso previo), y PQRD sin respuesta. Se evalúan después de cada carga o edición
-        y una vez al día. Por ahora solo se muestran aquí: el envío por correo queda pendiente.
+        Hitos de 90, 120, 150 y 180 días acumulados (y aviso previo), y PQRD sin respuesta. Se evalúan con la fecha de hoy después de
+        cada carga o edición y todos los días a las 6:00 a. m. Por ahora solo se muestran aquí: el envío por correo queda pendiente.
       </Aviso>
+      {resumen && <EstadoTarea tarea={resumen.tarea} />}
       {mensaje && <Aviso tipo="ok">{mensaje}</Aviso>}
       {error && <Aviso tipo="error">{error}</Aviso>}
       <Panel
@@ -137,13 +141,41 @@ export function AlertasTab() {
           <div className="space-y-2">
             {alertas.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">Sin alertas con estos filtros.</p>}
             {alertas.map((a) => (
-              <TarjetaAlerta key={a.id} alerta={a} onAbrir={setAbierta} onListo={async () => { await cargar(); await recargar() }} />
+              <TarjetaAlerta key={a.id} alerta={a} onAbrir={setAbierta} onListo={async () => { await cargar(); await recargar(); avisarCambioAlertas() }} />
             ))}
           </div>
         )}
       </Panel>
       <DetalleIncapacidad id={abierta} onCerrar={() => setAbierta(null)} />
     </div>
+  )
+}
+
+/** Aviso si la tarea diaria no ha corrido, lleva días sin correr o falló. */
+function EstadoTarea({ tarea }: { tarea: NonNullable<ReturnType<typeof useResumenAlertas>>["tarea"] }) {
+  if (tarea.estado === "al_dia") {
+    return <p className="text-xs text-muted-foreground">Última evaluación diaria: {fechaHora(tarea.ultima.created_at)}.</p>
+  }
+  if (tarea.estado === "nunca") {
+    return (
+      <Aviso tipo="alerta">
+        La evaluación diaria automática aún no ha corrido. Empieza a funcionar cuando esta versión esté publicada en producción
+        (Vercel) con la variable <code>CRON_SECRET</code>. Mientras tanto use «Evaluar ahora».
+      </Aviso>
+    )
+  }
+  if (tarea.estado === "fallo") {
+    return (
+      <Aviso tipo="error">
+        La última evaluación diaria ({fechaHora(tarea.ultima.created_at)}) falló: {tarea.ultima.error ?? "error desconocido"}.
+        {tarea.ultimaExitosa && <> Última exitosa: {fechaHora(tarea.ultimaExitosa.created_at)}.</>} Use «Evaluar ahora» y avise a sistemas.
+      </Aviso>
+    )
+  }
+  return (
+    <Aviso tipo="alerta">
+      La evaluación diaria lleva {tarea.dias} días sin correr (última: {fechaHora(tarea.ultimaExitosa.created_at)}). Use «Evaluar ahora» y avise a sistemas.
+    </Aviso>
   )
 }
 

@@ -29,9 +29,12 @@ export function NavMain({
     url: string
     icon?: LucideIcon
     isActive?: boolean
+    /** Contador o etiqueta junto al título (p. ej. alertas pendientes). */
+    badge?: React.ReactNode
     items?: {
       title: string
       url: string
+      badge?: React.ReactNode
     }[]
   }[]
 }) {
@@ -100,6 +103,7 @@ export function NavMain({
                   >
                     {item.icon && <item.icon className="size-4" />}
                     <span>{item.title}</span>
+                    {item.badge}
                     <ChevronRight className="ml-auto size-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
                   </SidebarMenuButton>
                 </CollapsibleTrigger>
@@ -119,6 +123,7 @@ export function NavMain({
                           >
                             <Link href={subItem.url} className="cursor-pointer" onClick={() => handleItemClick(subItem.title)}>
                               <span>{subItem.title}</span>
+                              {subItem.badge && <span className="ml-auto">{subItem.badge}</span>}
                             </Link>
                           </SidebarMenuSubButton>
                         </SidebarMenuSubItem>

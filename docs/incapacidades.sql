@@ -220,3 +220,23 @@ values ('incapacidades-soportes', 'incapacidades-soportes', false, 10485760,
         array['application/pdf','image/png','image/jpeg'])
 on conflict (id) do nothing;
 -- Sin políticas en storage.objects para este bucket: solo la service role accede.
+
+-- ── Registro de evaluaciones de alertas (tarea diaria, botón, cargas) ────────
+-- Permite ver en la app que la tarea diaria corrió y avisar si lleva días sin
+-- correr o si falló. Aplicado el 2026-11-05.
+create table if not exists public.incapacidad_alertas_ejecuciones (
+  id          uuid primary key default gen_random_uuid(),
+  origen      text not null check (origen in ('cron','manual','carga','edicion','parametros')),
+  usuario     text,
+  corte       date,
+  evaluadas   integer,
+  nuevas      integer,
+  ok          boolean not null,
+  error       text,
+  duracion_ms integer,
+  created_at  timestamptz not null default now()
+);
+create index if not exists incapacidad_alertas_ejecuciones_idx
+  on public.incapacidad_alertas_ejecuciones (origen, created_at desc);
+alter table public.incapacidad_alertas_ejecuciones enable row level security;
+revoke all on table public.incapacidad_alertas_ejecuciones from anon, authenticated;

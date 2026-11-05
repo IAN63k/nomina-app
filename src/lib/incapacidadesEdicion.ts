@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { exigir, sinError } from "@/src/lib/apiIncapacidades"
-import { auditar, cobroDeIncapacidad, evaluarAlertas, leerParametros, obtenerIncapacidad } from "@/src/lib/incapacidadesDb"
+import { auditar, cobroDeIncapacidad, evaluarYRegistrar, leerParametros, obtenerIncapacidad } from "@/src/lib/incapacidadesDb"
 import { hoyBogota } from "@/src/services/incapacidadesEngine"
 import { validarEdicion } from "@/src/services/incapacidadesValidacion"
 import type { Incapacidad, ParametrosIncapacidades } from "@/src/types/incapacidad"
@@ -58,7 +58,7 @@ export async function aplicarEdicion(
     }))
   }
 
-  const alertas = reevaluarAlertas && opciones.evaluar !== false ? await evaluarAlertas(db) : null
+  const alertas = reevaluarAlertas && opciones.evaluar !== false ? await evaluarYRegistrar(db, "edicion", usuario) : null
   const inc = (await obtenerIncapacidad(db, actual.id!))!
   const { cobro } = await cobroDeIncapacidad(db, inc)
   return { incapacidad: inc, cobro, alertasNuevas: alertas?.nuevas ?? 0, reevaluarAlertas }

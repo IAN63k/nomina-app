@@ -12,6 +12,7 @@ import { MaternidadTab, ResumenTab, TransitoTab } from "@/components/incapacidad
 import { AlertasTab, ParametrosTab, PqrdTab } from "@/components/incapacidades/gestion-tabs"
 import { Aviso, Cargando } from "@/components/incapacidades/ui"
 import { fecha } from "@/components/incapacidades/formato"
+import { useResumenAlertas } from "@/components/incapacidades/alertas-pendientes"
 
 const PESTANAS = [
   { id: "seguimiento", texto: "Seguimiento" },
@@ -41,6 +42,7 @@ function Contenido() {
   const visibles = PESTANAS.filter((p) => p.id !== "parametros" || puede("editar_parametros"))
   const actual = visibles.some((p) => p.id === pestana) ? pestana : "seguimiento"
   const pendientesRevisar = items.filter((x) => x.inc.paraRevisar.length > 0).length
+  const alertasPendientes = useResumenAlertas(estado === "listo")?.pendientes ?? 0
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-4 pt-0">
@@ -62,6 +64,9 @@ function Contenido() {
             {visibles.map((p) => (
               <Button key={p.id} size="sm" variant={actual === p.id ? "default" : "ghost"} aria-current={actual === p.id ? "page" : undefined} onClick={() => setPestana(p.id)}>
                 {p.texto}
+                {p.id === "alertas" && alertasPendientes > 0 && (
+                  <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white">{alertasPendientes}</span>
+                )}
               </Button>
             ))}
           </nav>
