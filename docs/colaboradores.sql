@@ -14,7 +14,8 @@
 -- =============================================================================
 
 create table if not exists public.colaboradores (
-  identificacion  text primary key check (identificacion ~ '^[0-9]{3,15}$'),
+  -- Alfanumérica: Incapacidades puede registrar extranjeros (pasaporte, PPT).
+  identificacion  text primary key check (identificacion ~ '^[A-Za-z0-9-]{3,20}$'),
   nombre          text not null check (length(trim(nombre)) > 0),
   cargo           text,
   sede            text,

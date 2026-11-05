@@ -23,4 +23,7 @@ export interface ColaboradorImportado {
   fondoPensiones: string | null
 }
 
+/** Cédula colombiana del listado de empleados: solo dígitos. */
 export const CEDULA_VALIDA = /^[0-9]{3,15}$/
+/** Identificación en BD: alfanumérica para extranjeros (pasaporte, PPT) que llegan por Incapacidades. */
+export const IDENTIFICACION_VALIDA = /^[A-Za-z0-9-]{3,20}$/

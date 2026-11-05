@@ -3,7 +3,7 @@ import { requireSession } from "@/src/lib/requireSession"
 import { getSupabaseServerClient } from "@/src/lib/supabase-server"
 import { listaFondos, obtenerColaborador } from "@/src/lib/colaboradoresDb"
 import { validarEdicion } from "@/src/services/colaboradoresValidacion"
-import { CEDULA_VALIDA } from "@/src/types/colaborador"
+import { IDENTIFICACION_VALIDA } from "@/src/types/colaborador"
 
 const CAMPO_APP: Record<string, string> = { fondo_pensiones: "fondoPensiones" }
 
@@ -13,7 +13,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ cedula: s
   if (!auth.ok) return auth.response
 
   const { cedula } = await ctx.params
-  if (!CEDULA_VALIDA.test(cedula)) return NextResponse.json({ error: "Cédula inválida" }, { status: 400 })
+  if (!IDENTIFICACION_VALIDA.test(cedula)) return NextResponse.json({ error: "Cédula inválida" }, { status: 400 })
 
   let body: unknown
   try {
