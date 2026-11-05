@@ -50,6 +50,10 @@ const data = {
           url: "/recargos",
         },
         {
+          title: "Incapacidades",
+          url: "/incapacidades",
+        },
+        {
           title: "Procesar Nómina",
           url: "#",
         },

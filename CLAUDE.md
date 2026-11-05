@@ -11,7 +11,7 @@ npm run lint     # ESLint
 npm start        # Start production server
 ```
 
-No test framework is configured yet.
+npm test         # Vitest (src/**/*.test.ts, TZ America/Bogota)
 
 ## Architecture
 
@@ -115,3 +115,14 @@ SUPABASE_SERVICE_ROLE_KEY        # Server-only service role key
 ### DB Table: `turnos_medicos`
 
 Columns: `medico`, `fecha`, `fecha_inicio`, `turno_codigo`, `entrada`, `salida`, `horas`, `horasrecargo`, `concepto`, `dia` (D=Sunday, H=Weekday, S=Saturday). Unique key: `(medico, fecha_inicio, concepto)` — multiple conceptos per day coexist as separate rows; `fecha` is the physical date, `fecha_inicio` the shift's start day (differ only on a night's post-midnight half).
+
+### Incapacidades Module (`/incapacidades`)
+
+Seguimiento del cobro de incapacidades a EPS/ARL y fondos de pensiones (reemplaza el libro Excel "Seguimiento de incapacidades 2026"). **`src/services/incapacidadesEngine.ts` is the single source of truth**: saldo, alerta de cobro (replica la fórmula del Excel), tramos EPS/fondo, cadenas de prórroga, alertas 90/120/150/180 (+ previa), vistas de tránsito/maternidad y Resumen. The UI (`components/incapacidades/`) computes everything with it from `GET /api/incapacidades`; never duplicate those rules.
+
+- **Datos sensibles**: tablas `incapacidad*` y `colaboradores` con RLS **sin políticas** y privilegios revocados a anon/authenticated (`docs/incapacidades.sql`, `docs/colaboradores.sql`). Todo pasa por `app/api/incapacidades/*` / `app/api/colaboradores/*` con service role, **sesión firmada** (cookie httpOnly `nomina_session`, `src/lib/session.ts`, requiere `SESSION_SECRET`) y permisos por rol (`src/lib/permisos.ts`: admin → administrador; desconocido → consulta). Cada escritura se audita en `incapacidad_auditoria`.
+- **Carga KactuS**: el .xlsx se lee en el **navegador** (`incapacidadesParser.ts`); el diagnóstico solo marca `sugerido_transito` y se descarta (nunca viaja ni se guarda). El servidor decide nuevas/duplicadas contra la BD (`POST /api/incapacidades/cargas`, modos `vista_previa`/`confirmar`) y guarda con la función atómica `incapacidades_importar` (`docs/incapacidades_importar.sql`). La carga nunca modifica lo ya registrado.
+- **Cobro desde el día 181**: los días > 180 se cobran al fondo de pensiones del colaborador (`colaboradores.fondo_pensiones`); si la incapacidad cruza el 180 se divide (proporcional o `valor_fondo_manual`). Solo Enfermedad general y Accidente de tránsito.
+- **Alertas**: `evaluarAlertas` (`src/lib/incapacidadesDb.ts`) inserta solo nuevas por `clave` única; corre tras cada carga/edición y por `GET/POST /api/incapacidades/alertas/evaluar` (sesión o `Authorization: Bearer $CRON_SECRET`). Correo: pendiente.
+- **Migración**: `npm run migrar:incapacidades -- --libro … --kactus … --usuario …` (simulacro por defecto; `--aplicar` escribe y verifica totales).
+- **Pruebas**: `npm test` (Vitest). Las de datos reales leen `test-fixtures/private/` (gitignored, Ley 1581) y se saltan si no está; **nunca** poner nombres, cédulas ni Nº de incapacidad reales en pruebas, comentarios o commits.
