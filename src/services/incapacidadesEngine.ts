@@ -352,6 +352,9 @@ export const ACCION_HITO: Record<number, string> = {
   180: "Desde el día 181 el subsidio lo paga el fondo de pensiones: verificar el fondo del colaborador y avisar a nómina",
 }
 
+/** Días sin prórroga tras los que una cadena se da por cerrada (como en la hoja de tránsito). */
+export const DIAS_CADENA_VIVA = 30
+
 function accionHito(hito: number, tieneFondo: boolean): string {
   let accion = ACCION_HITO[hito] ?? `Revisar el caso: el colaborador llega a ${hito} días acumulados`
   if (hito >= DIA_LIMITE_EPS && !tieneFondo) accion += " · Falta registrar el fondo de pensiones"
@@ -362,7 +365,8 @@ function accionHito(hito: number, tieneFondo: boolean): string {
  * Alertas de 90/120/150/180 días (y la previa N días antes de cada hito), una
  * sola vez por colaborador, cadena e hito: la `clave` es estable para que la
  * BD las deduplique. Si una carga salta varios hitos se generan todas; la
- * previa solo se genera mientras el hito aún no se cumple.
+ * previa solo se genera mientras el hito aún no se cumple, en la cadena actual
+ * del colaborador y si tuvo incapacidad en los últimos 30 días.
  */
 export function alertasDiasAcumulados(
   incs: Incapacidad[],
@@ -370,12 +374,21 @@ export function alertasDiasAcumulados(
 ): AlertaDias[] {
   const alertas: AlertaDias[] = []
   const hitos = [...ctx.params.hitosDias].sort((a, b) => a - b)
+  const cadenas = construirCadenas(incs)
 
-  for (const cadena of construirCadenas(incs)) {
+  // La previa solo tiene sentido en la cadena actual y viva: una cadena vieja
+  // (ya reiniciada, o sin prórroga hace más de 30 días) no va a llegar al hito.
+  const ultimaCadena = new Map<string, Cadena>()
+  for (const c of cadenas) ultimaCadena.set(c.identificacion, c)
+
+  for (const cadena of cadenas) {
     const acumulados = cadena.incapacidades.map((i) => diasAcumuladosAlCorte(i, ctx.corte))
     const maxAcum = Math.max(...acumulados)
     const ultima = cadena.incapacidades[cadena.incapacidades.length - 1]
     const tieneFondo = ctx.fondos.has(cadena.identificacion)
+    const admitePrevia =
+      ultimaCadena.get(cadena.identificacion) === cadena &&
+      diferenciaDias(ctx.corte, ultima.fechaHasta) <= DIAS_CADENA_VIVA
 
     for (const hito of hitos) {
       if (maxAcum >= hito) {
@@ -395,7 +408,7 @@ export function alertasDiasAcumulados(
           nroIncapacidad: disparo.nroIncapacidad,
           accionSugerida: accionHito(hito, tieneFondo),
         })
-      } else if (maxAcum >= hito - ctx.params.diasAlertaPrevia) {
+      } else if (admitePrevia && maxAcum >= hito - ctx.params.diasAlertaPrevia) {
         alertas.push({
           clave: `previa|${cadena.identificacion}|${cadena.id}|${hito}`,
           tipo: "previa",

@@ -224,9 +224,20 @@ describe("alertas de días acumulados", () => {
     expect(alertas[3].accionSugerida).toContain("Falta registrar el fondo de pensiones")
   })
 
-  it("72 días → ninguna; 76 días → solo la previa del día 90", () => {
-    expect(hitosDe(cadena("D", [[72, "2026-06-01", "2026-08-11"]]))).toEqual([])
-    expect(hitosDe(cadena("E", [[76, "2026-06-01", "2026-08-15"]]))).toEqual(["previa:90"])
+  it("72 días → ninguna; 76 días con incapacidad reciente → solo la previa del día 90", () => {
+    expect(hitosDe(cadena("D", [[72, "2026-08-24", "2026-11-03"]]))).toEqual([])
+    const alertas = alertasDiasAcumulados(cadena("E", [[76, "2026-08-20", "2026-11-03"]]), { params, corte: CORTE, fondos: new Map() })
+    expect(alertas.map((a) => `${a.tipo}:${a.hito}`)).toEqual(["previa:90"])
+    expect(alertas[0].fechaCumplimiento).toBe("2026-11-17") // llegaría al día 90 en 14 días
+  })
+
+  it("sin previa en una cadena vieja (reiniciada o sin prórroga hace más de 30 días)", () => {
+    // Cadena anterior llegó a 80 días; la actual va en 72 → ninguna alerta.
+    const vieja = cadena("V", [[80, "2026-04-08", "2026-06-26"]])
+    const actual = cadena("V", [[72, "2026-08-24", "2026-11-03"]]).map((i) => ({ ...i, nroIncapacidad: `${i.nroIncapacidad}b` }))
+    expect(hitosDe([...vieja, ...actual])).toEqual([])
+    // Cadena única de 80 días que terminó hace meses → tampoco.
+    expect(hitosDe(cadena("W", [[80, "2026-04-08", "2026-06-26"]]))).toEqual([])
   })
 
   it("una licencia de maternidad de 126 días no genera alerta", () => {
