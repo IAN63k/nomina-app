@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSupabaseServerClient } from "@/src/lib/supabase-server"
+import { SESSION_COOKIE, createSessionToken, sessionCookieOptions } from "@/src/lib/session"
 
 export async function POST(req: NextRequest) {
   try {
@@ -35,13 +36,18 @@ export async function POST(req: NextRequest) {
     }
 
     const user = data[0]
-
-    return NextResponse.json({
+    const sessionUser = {
       id:      user.id,
       nombre:  user.nombre,
       usuario: user.usuario,
       rol:     user.rol,
-    })
+    }
+
+    // Cookie firmada httpOnly: la validan las rutas de servidor que manejan
+    // datos sensibles (incapacidades). La UI sigue usando el JSON + localStorage.
+    const res = NextResponse.json(sessionUser)
+    res.cookies.set(SESSION_COOKIE, await createSessionToken(sessionUser), sessionCookieOptions())
+    return res
   } catch {
     return NextResponse.json(
       { error: "Error interno del servidor." },
