@@ -46,7 +46,13 @@ export async function POST(req: NextRequest) {
     // Cookie firmada httpOnly: la validan las rutas de servidor que manejan
     // datos sensibles (incapacidades). La UI sigue usando el JSON + localStorage.
     const res = NextResponse.json(sessionUser)
-    res.cookies.set(SESSION_COOKIE, await createSessionToken(sessionUser), sessionCookieOptions())
+    try {
+      res.cookies.set(SESSION_COOKIE, await createSessionToken(sessionUser), sessionCookieOptions())
+    } catch (e) {
+      // Sin SESSION_SECRET el resto de la app sigue funcionando; solo las
+      // rutas de incapacidades responderán 401.
+      console.error("No se pudo emitir la cookie de sesión:", (e as Error).message)
+    }
     return res
   } catch {
     return NextResponse.json(
