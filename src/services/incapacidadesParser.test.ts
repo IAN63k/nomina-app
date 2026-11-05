@@ -26,7 +26,7 @@ const base: Fila = {
   identificacion: 1000,
   nombres: "ANA",
   apellidos: "PRUEBA",
-  nro: " 7003430648 ",
+  nro: " 9000000001 ",
   concepto: 121,
   nombreConcepto: "INCAPACIDAD POR ENFERMEDAD GENERAL",
   dias: 5,
@@ -36,7 +36,7 @@ const base: Fila = {
   valor: 175091,
   entidad: "SERVICIOS OCCIDENTAL DE SALUD S.A S.O.S",
   diagnostico: "L923",
-  observaciones: "REG. INCAP - 7003430648",
+  observaciones: "REG. INCAP - 9000000001",
 }
 
 const leer = (filas: Fila[], nombre = "INCA.xlsx") => {
@@ -76,11 +76,11 @@ describe("leerKactus", () => {
   })
 
   it("mapea la fila a los campos de Seguimiento", () => {
-    const { filas } = leer([base, { ...base, nro: "7003439042", prorrogada: "7003430648", dias: 11, diasTotales: 16 }])
+    const { filas } = leer([base, { ...base, nro: "9000000002", prorrogada: "9000000001", dias: 11, diasTotales: 16 }])
     expect(filas[0]).toMatchObject({
       identificacion: "1000",
       nombre: "ANA PRUEBA",
-      nroIncapacidad: "7003430648",
+      nroIncapacidad: "9000000001",
       tipo: "Enfermedad general",
       esProrroga: false,
       dias: 5,
@@ -90,7 +90,7 @@ describe("leerKactus", () => {
       fechaRadicacionNomina: "2026-09-03",
       valorIncapacidad: 175091,
       eps: "SOS",
-      observacion: "REG. INCAP - 7003430648",
+      observacion: "REG. INCAP - 9000000001",
       sugeridoTransito: false,
     })
     expect(filas[1]).toMatchObject({ esProrroga: true, diasAcumulados: 16 })
@@ -128,7 +128,7 @@ describe("leerKactus", () => {
 describe("prepararCarga", () => {
   it("separa nuevas y duplicadas (contra lo registrado y dentro del archivo, ignorando espacios)", () => {
     const lectura = leer([base, { ...base, nro: "B" }, { ...base, nro: " B" }])
-    const v = prepararCarga(lectura, [{ identificacion: "1000", nroIncapacidad: "7003430648", fechaRadicacionNomina: "2026-09-03" }], new Map(), "INCA.xlsx")
+    const v = prepararCarga(lectura, [{ identificacion: "1000", nroIncapacidad: "9000000001", fechaRadicacionNomina: "2026-09-03" }], new Map(), "INCA.xlsx")
     expect(v.nuevas.map((n) => n.nroIncapacidad)).toEqual(["B"])
     expect(v.duplicadas.map((d) => d.contra)).toEqual(["registrada", "archivo"])
     expect(v.nuevas[0]).toMatchObject({ estado: "Radicada", fechaRadicacionNomina: "2026-09-03", origen: "INCA.xlsx" })
@@ -136,7 +136,7 @@ describe("prepararCarga", () => {
   })
 
   it("duplicada con fecha de radicación nómina distinta va a 'para revisar'", () => {
-    const v = prepararCarga(leer([base]), [{ identificacion: "1000", nroIncapacidad: "7003430648", fechaRadicacionNomina: "2026-09-01" }], new Map(), "x")
+    const v = prepararCarga(leer([base]), [{ identificacion: "1000", nroIncapacidad: "9000000001", fechaRadicacionNomina: "2026-09-01" }], new Map(), "x")
     expect(v.paraRevisar[0]).toMatchObject({ esNueva: false })
     expect(v.paraRevisar[0].motivos[0]).toContain("registrada 2026-09-01, archivo 2026-09-03")
   })
