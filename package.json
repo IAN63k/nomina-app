@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "migrar:incapacidades": "TZ=America/Bogota node node_modules/vite-node/vite-node.mjs --config vitest.config.ts scripts/migrar-incapacidades.ts --"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

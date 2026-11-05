@@ -9,6 +9,7 @@
 
 import * as XLSX from "xlsx"
 import { aFechaISO, aNumero, aTexto } from "@/src/services/incapacidadesParser"
+import { esDiagnosticoLesion } from "@/src/services/incapacidadesEngine"
 import type { FechaISO, Incapacidad } from "@/src/types/incapacidad"
 
 export const HOJA_SEGUIMIENTO = "Seguimiento"
@@ -112,4 +113,41 @@ export function leerLibroSeguimiento(data: ArrayBuffer | Uint8Array): ResultadoL
     })
   }
   return { ok: true, filas }
+}
+
+/**
+ * Bloque "POSIBLES CASOS POR CONFIRMAR" de la hoja "Accidentes tránsito":
+ * colaboradores con diagnóstico de lesión. Devuelve solo identificación y
+ * última Fecha hasta de los que tienen lesión (CIE-10 S, T, V–Y); el
+ * diagnóstico se descarta aquí (RNF-01).
+ */
+export function leerCandidatosTransitoLibro(
+  data: ArrayBuffer | Uint8Array,
+): { identificacion: string; ultimaFechaHasta: FechaISO }[] {
+  const wb = XLSX.read(data, { type: "array", cellDates: true })
+  const ws = wb.Sheets["Accidentes tránsito"]
+  if (!ws) return []
+  const matriz = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: null, raw: true })
+
+  let filaEnc = -1
+  let colId = -1
+  for (let r = 0; r < Math.min(matriz.length, 20) && filaEnc === -1; r++) {
+    const row = matriz[r] ?? []
+    const i = row.findIndex((v) => aTexto(v) === "Identificación")
+    if (i !== -1 && aTexto(row[i + 2]) === "Diagnóstico") {
+      filaEnc = r
+      colId = i
+    }
+  }
+  if (filaEnc === -1) return []
+
+  const salida: { identificacion: string; ultimaFechaHasta: FechaISO }[] = []
+  for (let r = filaEnc + 1; r < matriz.length; r++) {
+    const row = matriz[r] ?? []
+    const identificacion = aTexto(row[colId])
+    const fecha = aFechaISO(row[colId + 4])
+    if (!identificacion || !fecha) continue
+    if (esDiagnosticoLesion(aTexto(row[colId + 2]))) salida.push({ identificacion, ultimaFechaHasta: fecha })
+  }
+  return salida
 }

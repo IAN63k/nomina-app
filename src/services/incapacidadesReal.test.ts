@@ -9,7 +9,8 @@ import { describe, it, expect } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
 import { leerKactus, prepararCarga, type RegistroExistente } from "./incapacidadesParser"
-import { leerLibroSeguimiento, type FilaLibro } from "./seguimientoLibroParser"
+import { leerCandidatosTransitoLibro, leerLibroSeguimiento, type FilaLibro } from "./seguimientoLibroParser"
+import { prepararMigracion } from "./incapacidadesMigracion"
 import {
   alertasDiasAcumulados,
   calcularCobro,
@@ -126,6 +127,53 @@ describe.skipIf(!hayDatos)("datos reales: carga de KactuS", () => {
     const fila = vistaMaternidad(items, CORTE).filas[0]
     expect(fila.fechaReintegro).toBe("2027-02-01")
     expect(fila.finLactancia).toBe("2027-03-27")
+  })
+})
+
+describe.skipIf(!hayDatos)("datos reales: migración", () => {
+  const plan = () => {
+    const datos = new Uint8Array(fs.readFileSync(LIBRO))
+    const r = leerLibroSeguimiento(datos)
+    if (!r.ok) throw new Error(r.error)
+    const sugeridos = new Set(
+      leerCandidatosTransitoLibro(datos).flatMap((c) => {
+        const f = r.filas.find((x) => x.inc.identificacion === c.identificacion && x.inc.fechaHasta === c.ultimaFechaHasta)
+        return f ? [`${f.inc.identificacion}|${f.inc.nroIncapacidad}`] : []
+      }),
+    )
+    return prepararMigracion(r.filas, { fechaMigracion: "2026-11-05", kactus: lecturaKactus().filas, sugeridosTransito: sugeridos })
+  }
+
+  it("deja 489 incapacidades con los totales del libro y sin errores", () => {
+    const p = plan()
+    expect(p.errores).toEqual([])
+    expect(p.incapacidades).toHaveLength(489)
+    expect(p.pagos).toHaveLength(340)
+    const pagos = new Map(p.pagos.map((x) => [`${x.identificacion}|${x.nroIncapacidad}`, x]))
+    const items = p.incapacidades.map((inc) => {
+      const pg = pagos.get(`${inc.identificacion}|${inc.nroIncapacidad}`)
+      const lista: Pago[] = pg ? [{ incapacidadId: "x", tramo: pg.tramo, fechaPago: pg.fechaPago, valor: pg.valor, anulado: false }] : []
+      return { inc, cobro: calcularCobro(inc, lista, { params: P, corte: CORTE, fondo: null }) }
+    })
+    expect(resumenCartera(items, P).totales).toMatchObject({ valor: 539_275_156, pagado: 409_757_506, saldo: 129_517_650 })
+  })
+
+  it("aplica las reglas: 17 Sin subsidio → fondo y 4 rechazadas por rehabilitación → Sin subsidio", () => {
+    const p = plan()
+    expect(p.cambios.filter((c) => c.regla === "sin_subsidio_a_fondo")).toHaveLength(17)
+    expect(p.cambios.filter((c) => c.regla === "rehabilitacion_a_sin_subsidio").map((c) => c.nroIncapacidad).sort()).toEqual(
+      ["1002953622", "14574587", "14683015", "290379"],
+    )
+    expect(p.incapacidades.filter((i) => i.estado === "Sin subsidio")).toHaveLength(4)
+  })
+
+  it("toma la lactancia de KactuS y marca para revisar PR-7757928", () => {
+    const p = plan()
+    expect(p.incapacidades.find((i) => i.tipo === "Licencia de maternidad" && i.fechaDesde === "2026-09-28")!.finLactancia).toBe("2027-03-27")
+    expect(p.incapacidades.find((i) => i.nroIncapacidad === "PR-7757928")!.paraRevisar).toEqual(["Valor incapacidad en $0"])
+    expect(p.incapacidades.find((i) => i.nroIncapacidad === "61026")!.paraRevisar).toEqual([
+      "Supera 180 días: se cobra al fondo de pensiones (verificar fondo y valor)",
+    ])
   })
 })
 
