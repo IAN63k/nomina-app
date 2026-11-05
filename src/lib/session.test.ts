@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { SignJWT } from "jose"
 import { createSessionToken, verifySessionToken } from "./session"
-import { puede, rolIncapacidades } from "./incapacidadesPermisos"
+import { puede, rolDe } from "./permisos"
 
 const user = { id: "00000000-0000-0000-0000-000000000001", nombre: "Ana", usuario: "ana", rol: "admin" }
 
@@ -38,10 +38,10 @@ describe("sesión firmada", () => {
 
 describe("permisos de incapacidades", () => {
   it("mapea roles; desconocido = consulta", () => {
-    expect(rolIncapacidades("admin")).toBe("administrador")
-    expect(rolIncapacidades(" Analista ")).toBe("analista")
-    expect(rolIncapacidades("otro")).toBe("consulta")
-    expect(rolIncapacidades(null)).toBe("consulta")
+    expect(rolDe("admin")).toBe("administrador")
+    expect(rolDe(" Analista ")).toBe("analista")
+    expect(rolDe("otro")).toBe("consulta")
+    expect(rolDe(null)).toBe("consulta")
   })
 
   it("solo el administrador anula pagos y edita parámetros", () => {

@@ -113,13 +113,9 @@ create table if not exists public.incapacidad_pqrd (
 create index if not exists incapacidad_pqrd_inc_idx    on public.incapacidad_pqrd (incapacidad_id);
 create index if not exists incapacidad_pqrd_estado_idx on public.incapacidad_pqrd (estado, fecha_limite);
 
--- ── Fondo de pensiones por colaborador (se digita a mano) ───────────────────
-create table if not exists public.colaborador_fondo_pensiones (
-  identificacion text primary key,
-  fondo          text not null,                   -- Colpensiones, Porvenir, Protección, Colfondos, Skandia
-  updated_by     text,
-  updated_at     timestamptz not null default now()
-);
+-- ── Fondo de pensiones: vive en public.colaboradores.fondo_pensiones ───────
+-- (maestro de colaboradores, docs/colaboradores.sql). La tabla
+-- colaborador_fondo_pensiones se eliminó el 2026-11-05.
 
 -- ── Alertas (hitos de días, previas y PQRD vencidas) ────────────────────────
 -- `clave` hace idempotente la generación: una sola alerta por colaborador,
@@ -210,7 +206,7 @@ declare t text;
 begin
   foreach t in array array[
     'incapacidades','incapacidad_pagos','incapacidad_gestiones','incapacidad_pqrd',
-    'colaborador_fondo_pensiones','incapacidad_alertas','incapacidad_cargas',
+    'incapacidad_alertas','incapacidad_cargas',
     'incapacidad_parametros','incapacidad_auditoria'
   ] loop
     execute format('alter table public.%I enable row level security', t);
