@@ -19,6 +19,7 @@ import { useEmpleados } from "@/contexts/empleados-context"
 import { useSettingsSidebar } from "@/contexts/settings-sidebar-context"
 import { useAppearance } from "@/contexts/appearance-context"
 import { useAuth } from "@/contexts/auth-context"
+import { puede } from "@/src/lib/permisos"
 import { parseAuxiliaresFile } from "@/src/services/auxiliaresParser"
 import {
   computeAuxDisplayRows,
@@ -38,6 +39,9 @@ export function RecargosAuxiliaresTab() {
   const { recargoConfig } = useSettingsSidebar()
   const { colorOf } = useAppearance()
   const { user } = useAuth()
+  // Vaciar o restaurar la tabla completa es solo del administrador (el servidor también lo exige).
+  const puedeVaciar = puede(user?.rol, "vaciar_turnos")
+  const puedeGuardar = puede(user?.rol, "editar_turnos")
   const [dbLoading, setDbLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [saveSuggestionVisible, setSaveSuggestionVisible] = useState(false)
@@ -269,7 +273,7 @@ export function RecargosAuxiliaresTab() {
           {!dbLoading && dbMessage ? <p className="text-foreground">{dbMessage}</p> : null}
           {dbError ? <p className="text-destructive">Error BD: {dbError}</p> : null}
 
-          {ultimaEliminacion ? (
+          {ultimaEliminacion && puedeVaciar ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -292,7 +296,7 @@ export function RecargosAuxiliaresTab() {
             </div>
           ) : null}
 
-          {saveSuggestionVisible ? (
+          {saveSuggestionVisible && puedeGuardar ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button type="button" onClick={handleSaveToDb} disabled={savingToDb || loading}>
                 {savingToDb ? (
@@ -316,7 +320,7 @@ export function RecargosAuxiliaresTab() {
             </div>
           ) : null}
 
-          {!saveSuggestionVisible && months.length > 0 ? (
+          {!saveSuggestionVisible && months.length > 0 && puedeGuardar ? (
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <Button type="button" variant="outline" onClick={handleSaveToDb} disabled={savingToDb || deletingFromDb || restoringFromDb || loading}>
                 {savingToDb ? (
@@ -326,6 +330,7 @@ export function RecargosAuxiliaresTab() {
                   </>
                 ) : `Guardar en BD (${totalDbRows} filas)`}
               </Button>
+              {puedeVaciar && (
               <Button
                 type="button"
                 variant="destructive"
@@ -344,6 +349,7 @@ export function RecargosAuxiliaresTab() {
                   </>
                 )}
               </Button>
+              )}
             </div>
           ) : null}
         </div>
