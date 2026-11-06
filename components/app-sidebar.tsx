@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/sidebar"
 import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
+import { useResumenAlertas } from "@/components/incapacidades/alertas-pendientes"
 
 // This is sample data.
 const data = {
@@ -48,6 +49,10 @@ const data = {
         {
           title: "Recargos",
           url: "/recargos",
+        },
+        {
+          title: "Incapacidades",
+          url: "/incapacidades",
         },
         {
           title: "Procesar Nómina",
@@ -94,6 +99,30 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user } = useAuth();
+  // Contador de alertas de incapacidades pendientes (solo si hay sesión firmada).
+  const alertas = useResumenAlertas(Boolean(user));
+  const pendientes = alertas?.pendientes ?? 0;
+  const navMain = React.useMemo(() => {
+    if (!pendientes) return data.navMain;
+    const contador = (
+      <span
+        className="rounded-full bg-red-600 px-1.5 text-[10px] font-semibold leading-4 text-white"
+        aria-label={`${pendientes} alertas de incapacidades pendientes`}
+        title={`${pendientes} alertas de incapacidades pendientes`}
+      >
+        {pendientes > 99 ? "99+" : pendientes}
+      </span>
+    );
+    return data.navMain.map((item) =>
+      item.items?.some((sub) => sub.url === "/incapacidades")
+        ? {
+            ...item,
+            badge: contador,
+            items: item.items.map((sub) => (sub.url === "/incapacidades" ? { ...sub, badge: contador } : sub)),
+          }
+        : item,
+    );
+  }, [pendientes]);
   
   const userData = {
     name:   user?.nombre  || "Usuario",
@@ -115,7 +144,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="px-0 py-4">
-        <NavMain items={data.navMain} />
+        <NavMain items={navMain} />
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border/40 px-0 py-3">
         <NavUser user={userData} />

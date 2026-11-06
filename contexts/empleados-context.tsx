@@ -1,94 +1,149 @@
 "use client"
 
 /**
- * EmpleadosContext
+ * EmpleadosContext — maestro de colaboradores compartido.
  *
- * Almacena la lista de empleados ÚNICAMENTE en memoria React + sessionStorage.
- * - sessionStorage se borra automáticamente al cerrar la pestaña/navegador.
- * - Nunca se persiste en base de datos ni en localStorage.
- * - Si un atacante compromete el servidor no encuentra estos datos: nunca viajan
- *   a ningún backend ni se almacenan fuera del navegador del usuario.
+ * Los colaboradores viven en la tabla `colaboradores` de Supabase (aprobado por
+ * el responsable de datos el 2026-11-05; sin salarios ni datos de salud) y se
+ * leen/escriben SOLO por app/api/colaboradores/*, con sesión firmada y rol.
+ * Antes vivían en sessionStorage; esa copia se borra al montar.
+ *
+ * Recargos y la exportación TXT siguen usando getCedulaByName igual que antes.
  */
 
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react"
+import { useAuth } from "@/contexts/auth-context"
+import { parseEmpleadosFile, type ResultadoEmpleados } from "@/src/services/empleadosParser"
+import type { Colaborador } from "@/src/types/colaborador"
+import { crearIndiceCedulas } from "@/src/services/cedulaPorNombre"
 
-export type Empleado = {
-  nombre: string
-  cedula: string
-  cargo?: string
+/** Alias histórico: el resto de la app importa `Empleado`. */
+export type Empleado = Colaborador
+
+export type EstadoEmpleados = "cargando" | "listo" | "sin_sesion" | "error"
+
+export interface ResumenImportacion {
+  total: number
+  nuevos: number
+  actualizados: number
+  sin_cambios: number
+  /** Textos de fondo del archivo que no coinciden con la lista (se ignoraron). */
+  fondos_no_reconocidos: string[]
+  lectura: Pick<ResultadoEmpleados, "columnas" | "omitidas" | "duplicadas">
 }
 
 type EmpleadosContextType = {
   empleados: Empleado[]
-  loadEmpleados: (data: Empleado[]) => void
-  clearEmpleados: () => void
-  /** Devuelve la cédula del empleado que más se parezca al nombre, o "0000000000" si no encuentra. */
+  fondos: string[]
+  estado: EstadoEmpleados
+  error: string | null
+  recargar: () => Promise<void>
+  importarArchivo: (file: File) => Promise<ResumenImportacion>
+  actualizar: (cedula: string, cambios: Partial<Pick<Colaborador, "cargo" | "sede" | "fondoPensiones" | "activo">>) => Promise<void>
+  /** Cédula del colaborador con ese nombre (completo, otro orden o abreviado sin ambigüedad), o "0000000000". */
   getCedulaByName: (nombre: string) => string
 }
 
-const SESSION_KEY = "emp_sess"
+const SESSION_KEY_ANTIGUA = "emp_sess"
 
 const EmpleadosContext = createContext<EmpleadosContextType | null>(null)
 
+async function leerError(res: Response): Promise<string> {
+  try {
+    const data = await res.json()
+    return data?.error ?? `Error ${res.status}`
+  } catch {
+    return `Error ${res.status}`
+  }
+}
+
 export function EmpleadosProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth()
   const [empleados, setEmpleados] = useState<Empleado[]>([])
+  const [fondos, setFondos] = useState<string[]>([])
+  const [estado, setEstado] = useState<EstadoEmpleados>("cargando")
+  const [error, setError] = useState<string | null>(null)
 
-  // Restaurar desde sessionStorage al montar (misma pestaña tras navegación interna)
+  const recargar = useCallback(async () => {
+    setError(null)
+    try {
+      const res = await fetch("/api/colaboradores", { cache: "no-store" })
+      if (res.status === 401) {
+        setEmpleados([])
+        setEstado("sin_sesion")
+        return
+      }
+      if (!res.ok) throw new Error(await leerError(res))
+      const data = (await res.json()) as { colaboradores: Empleado[]; fondos: string[] }
+      setEmpleados(data.colaboradores)
+      setFondos(data.fondos)
+      setEstado("listo")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo cargar el listado.")
+      setEstado("error")
+    }
+  }, [])
+
   useEffect(() => {
+    // La lista ya no vive en el navegador: borrar la copia que dejó la versión anterior.
     try {
-      const raw = sessionStorage.getItem(SESSION_KEY)
-      if (raw) setEmpleados(JSON.parse(raw) as Empleado[])
-    } catch {
-      // sessionStorage no disponible o dato corrupto → ignorar
-    }
-  }, [])
-
-  const loadEmpleados = useCallback((data: Empleado[]) => {
-    setEmpleados(data)
-    try {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(data))
+      sessionStorage.removeItem(SESSION_KEY_ANTIGUA)
     } catch {}
   }, [])
 
-  const clearEmpleados = useCallback(() => {
-    setEmpleados([])
-    try {
-      sessionStorage.removeItem(SESSION_KEY)
-    } catch {}
-  }, [])
-
-  // Índice de búsqueda: dos llaves por empleado para tolerar diferencias de orden
-  // de palabras ("Apellidos Nombres" vs "Nombres Apellidos") y de espacios internos.
-  const cedulaIndex = useMemo(() => {
-    const byFull = new Map<string, string>()
-    const byTokens = new Map<string, string>()
-    for (const e of empleados) {
-      const full = normalize(e.nombre)
-      if (!full) continue
-      if (!byFull.has(full)) byFull.set(full, e.cedula)
-      const tokens = tokenKey(full)
-      if (!byTokens.has(tokens)) byTokens.set(tokens, e.cedula)
+  useEffect(() => {
+    if (!user) {
+      setEmpleados([])
+      setEstado("sin_sesion")
+      return
     }
-    return { byFull, byTokens }
-  }, [empleados])
+    setEstado("cargando")
+    void recargar()
+  }, [user, recargar])
 
-  const getCedulaByName = useCallback(
-    (nombre: string): string => {
-      if (!empleados.length) return "0000000000"
-      const q = normalize(nombre)
-      // 1) Coincidencia exacta del nombre completo.
-      const exact = cedulaIndex.byFull.get(q)
-      if (exact) return exact
-      // 2) Mismas palabras en distinto orden.
-      const byTokens = cedulaIndex.byTokens.get(tokenKey(q))
-      if (byTokens) return byTokens
-      return "0000000000"
+  const importarArchivo = useCallback(
+    async (file: File): Promise<ResumenImportacion> => {
+      const lectura = await parseEmpleadosFile(file)
+      const res = await fetch("/api/colaboradores/importar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archivo: file.name, colaboradores: lectura.colaboradores }),
+      })
+      if (res.status === 401) {
+        setEstado("sin_sesion")
+        throw new Error("Tu sesión venció. Vuelve a iniciar sesión para guardar el listado.")
+      }
+      if (!res.ok) throw new Error(await leerError(res))
+      const resumen = (await res.json()) as Omit<ResumenImportacion, "lectura">
+      await recargar()
+      return { ...resumen, lectura: { columnas: lectura.columnas, omitidas: lectura.omitidas, duplicadas: lectura.duplicadas } }
     },
-    [empleados, cedulaIndex]
+    [recargar],
   )
 
+  const actualizar = useCallback<EmpleadosContextType["actualizar"]>(async (cedula, cambios) => {
+    const res = await fetch(`/api/colaboradores/${encodeURIComponent(cedula)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cambios),
+    })
+    if (res.status === 401) {
+      setEstado("sin_sesion")
+      throw new Error("Tu sesión venció. Vuelve a iniciar sesión.")
+    }
+    if (!res.ok) throw new Error(await leerError(res))
+    const actualizado = (await res.json()) as Empleado
+    setEmpleados((prev) => prev.map((e) => (e.cedula === cedula ? actualizado : e)))
+  }, [])
+
+  // Cruce nombre → cédula (completo, otro orden o abreviado único): src/services/cedulaPorNombre.ts
+  const indiceCedulas = useMemo(() => crearIndiceCedulas(empleados), [empleados])
+  const getCedulaByName = useCallback((nombre: string): string => indiceCedulas.buscar(nombre), [indiceCedulas])
+
   return (
-    <EmpleadosContext.Provider value={{ empleados, loadEmpleados, clearEmpleados, getCedulaByName }}>
+    <EmpleadosContext.Provider
+      value={{ empleados, fondos, estado, error, recargar, importarArchivo, actualizar, getCedulaByName }}
+    >
       {children}
     </EmpleadosContext.Provider>
   )
@@ -98,22 +153,4 @@ export function useEmpleados() {
   const ctx = useContext(EmpleadosContext)
   if (!ctx) throw new Error("useEmpleados debe usarse dentro de EmpleadosProvider")
   return ctx
-}
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-function normalize(str: string) {
-  return str
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // quitar tildes
-    .replace(/\s+/g, " ") // colapsar espacios internos m\u00faltiples
-}
-
-// Llave independiente del orden de las palabras: tokens ordenados alfab\u00e9ticamente.
-// Recibe un nombre YA normalizado. Permite cruzar "garcia lopez juan" con
-// "juan garcia lopez".
-function tokenKey(normalized: string) {
-  return normalized.split(" ").filter(Boolean).sort().join(" ")
 }

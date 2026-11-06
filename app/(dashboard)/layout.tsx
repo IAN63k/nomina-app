@@ -36,6 +36,7 @@ export default function DashboardLayout({
     if (pathname === '/vacaciones') return 'Gestión de Vacaciones';
     if (pathname === '/recargos') return 'Gestión de Recargos';
     if (pathname === '/empleados') return 'Lista de Empleados';
+    if (pathname === '/incapacidades') return 'Incapacidades';
     return 'Página';
   };
 
