@@ -217,3 +217,14 @@ describe.skipIf(!hayDatos)("datos reales: alertas y vistas", () => {
     expect(fila.diasPara180).toBe(138)
   })
 })
+
+describe.skipIf(!hayDatos)("datos reales: exportación a Excel", () => {
+  it("abre sin errores y sus totales coinciden con el Resumen (539.275.156 / 409.757.506 / 129.517.650)", async () => {
+    const XLSX = await import("xlsx")
+    const { construirLibro, libroABytes } = await import("./incapacidadesExport")
+    const wb = XLSX.read(libroABytes(construirLibro(calcular(cargarLibro()), P, CORTE)), { type: "array" })
+    const res = wb.Sheets.Resumen
+    expect([res.B4.v, res.B5.v, res.B6.v]).toEqual([539_275_156, 409_757_506, 129_517_650])
+    expect(XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets.Seguimiento, { header: 1 }).slice(4)).toHaveLength(489)
+  })
+})

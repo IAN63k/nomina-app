@@ -110,6 +110,8 @@ Mail-merge that generates one vacation letter per employee, porting the Python t
 NEXT_PUBLIC_SUPABASE_URL          # Supabase project URL
 NEXT_PUBLIC_SUPABASE_ANON_KEY    # Browser-safe anon key
 SUPABASE_SERVICE_ROLE_KEY        # Server-only service role key
+SESSION_SECRET                   # Firma de la cookie de sesión (≥ 32 caracteres)
+CRON_SECRET                      # Vercel Cron → evaluación diaria de alertas
 ```
 
 ### DB Table: `turnos_medicos`
@@ -123,6 +125,7 @@ Seguimiento del cobro de incapacidades a EPS/ARL y fondos de pensiones (reemplaz
 - **Datos sensibles**: tablas `incapacidad*` y `colaboradores` con RLS **sin políticas** y privilegios revocados a anon/authenticated (`docs/incapacidades.sql`, `docs/colaboradores.sql`). Todo pasa por `app/api/incapacidades/*` / `app/api/colaboradores/*` con service role, **sesión firmada** (cookie httpOnly `nomina_session`, `src/lib/session.ts`, requiere `SESSION_SECRET`) y permisos por rol (`src/lib/permisos.ts`: admin → administrador; desconocido → consulta). Cada escritura se audita en `incapacidad_auditoria`.
 - **Carga KactuS**: el .xlsx se lee en el **navegador** (`incapacidadesParser.ts`); el diagnóstico solo marca `sugerido_transito` y se descarta (nunca viaja ni se guarda). El servidor decide nuevas/duplicadas contra la BD (`POST /api/incapacidades/cargas`, modos `vista_previa`/`confirmar`) y guarda con la función atómica `incapacidades_importar` (`docs/incapacidades_importar.sql`). La carga nunca modifica lo ya registrado.
 - **Cobro desde el día 181**: los días > 180 se cobran al fondo de pensiones del colaborador (`colaboradores.fondo_pensiones`); si la incapacidad cruza el 180 se divide (proporcional o `valor_fondo_manual`). Solo Enfermedad general y Accidente de tránsito.
-- **Alertas**: `evaluarAlertas` (`src/lib/incapacidadesDb.ts`) inserta solo nuevas por `clave` única; corre tras cada carga/edición y por `GET/POST /api/incapacidades/alertas/evaluar` (sesión o `Authorization: Bearer $CRON_SECRET`). Correo: pendiente.
+- **Alertas**: `evaluarAlertas` (`src/lib/incapacidadesDb.ts`) inserta solo nuevas por `clave` única; siempre con la fecha de **hoy** (la fecha de corte fija es solo para reportes); corre tras cada carga/edición, a diario por Vercel Cron (`vercel.json`, 11:00 UTC = 6:00 a. m. Bogotá, solo en producción) y con «Evaluar ahora» vía `GET/POST /api/incapacidades/alertas/evaluar` (sesión o `Authorization: Bearer $CRON_SECRET`). Cada evaluación queda en `incapacidad_alertas_ejecuciones`; la pestaña Alertas avisa si la tarea diaria nunca corrió, falló o lleva > 2 días sin correr. Contador de pendientes en el menú (`components/incapacidades/alertas-pendientes.ts`). Correo: pendiente.
+- **Exportación (RF-09)**: botón «Exportar a Excel» (todos los roles) → `src/services/incapacidadesExport.ts` arma en el navegador el libro con hojas Seguimiento (encabezados en la fila 4, columnas del libro original + Entidad de cobro y Para revisar), Resumen, Accidentes tránsito y Licencias maternidad, con el mismo motor: los totales cuadran con el Resumen. Fechas como serial de Excel sin zona horaria (`dd/mm/yyyy`).
 - **Migración**: `npm run migrar:incapacidades -- --libro … --kactus … --usuario …` (simulacro por defecto; `--aplicar` escribe y verifica totales).
 - **Pruebas**: `npm test` (Vitest). Las de datos reales leen `test-fixtures/private/` (gitignored, Ley 1581) y se saltan si no está; **nunca** poner nombres, cédulas ni Nº de incapacidad reales en pruebas, comentarios o commits.
