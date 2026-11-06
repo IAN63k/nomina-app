@@ -39,8 +39,10 @@ Two component areas coexist due to ongoing migration:
 
 1. **Import**: Excel upload → `excelParser.ts:parseExcelFile()` → `MonthSchedule[]`
 2. **Edit**: UI edits via `useSchedule` hook → `DoctorSchedule[]` / `ShiftCell[]`
-3. **Save**: `mapMonthsToTurnosRows()` transforms to DB schema → `upsertTurnosMedicos()` to Supabase
-4. **Load**: `fetchTurnosMedicos()` → `mapDbRowsToMonths()` → renders in `ScheduleTable`
+3. **Save**: `mapMonthsToTurnosRows()` transforms to DB schema → `upsertTurnosMedicos()` → `POST /api/turnos/medicos` (lotes de 1000)
+4. **Load**: `fetchTurnosMedicos()` → `GET /api/turnos/medicos?desde=` (páginas de 1000) → `mapDbRowsToMonths()` → renders in `ScheduleTable`
+
+**Acceso a datos (desde v1.19.1)**: el navegador **no** usa la anon key de Supabase. Turnos, papelera (`/vaciar`, `/restaurar`, `/papelera`), catálogo (`/api/turnos/catalogo/[modulo]`) y preferencias (`/api/preferencias`, siempre del usuario de la sesión) pasan por rutas de servidor con service role, sesión firmada y rol (`src/lib/permisos.ts`: vaciar/restaurar solo administrador; consulta solo lee). Cliente: `src/lib/apiCliente.ts` (`apiJson`), que ante un 401 dispara `nomina:sesion-vencida` → aviso en el layout sin perder lo que se está editando. Al abrir la app, `AuthContext` valida la cookie con `/api/auth/session` y, si no es válida, cierra la sesión (el layout redirige a `/login`). `docs/seguridad_supabase.sql` quita las políticas y permisos de anon (aplicar solo después de desplegar el código). No volver a usar `src/lib/supabase-browser.ts` para datos.
 
 ### Key Domain Types
 

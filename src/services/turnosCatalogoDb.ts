@@ -15,7 +15,7 @@
  * defecto de cada módulo.
  */
 
-import { getSupabaseBrowserClient } from "@/src/lib/supabase-browser"
+import { apiJson } from "@/src/lib/apiCliente"
 
 export type CatalogoModulo = "medicos" | "auxiliares"
 
@@ -26,29 +26,14 @@ export type TurnoCatalogoConfig = {
   descripcion: string
 }
 
-const TABLE = "turnos_catalogo"
+// Vía app/api/turnos/catalogo/[modulo] (sesión firmada y rol); el navegador ya
+// no escribe directo en la tabla `turnos_catalogo`.
+const api = (modulo: CatalogoModulo) => `/api/turnos/catalogo/${modulo}`
 
 export async function fetchTurnosCatalogo(
   modulo: CatalogoModulo
 ): Promise<Record<string, TurnoCatalogoConfig>> {
-  const supabase = getSupabaseBrowserClient()
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("codigo, entrada, salida, total, descripcion")
-    .eq("modulo", modulo)
-
-  if (error) throw new Error(error.message)
-
-  const result: Record<string, TurnoCatalogoConfig> = {}
-  for (const row of data ?? []) {
-    result[row.codigo as string] = {
-      entrada: (row.entrada as string) ?? "",
-      salida: (row.salida as string) ?? "",
-      total: (row.total as string) ?? "0",
-      descripcion: (row.descripcion as string) ?? "",
-    }
-  }
-  return result
+  return apiJson<Record<string, TurnoCatalogoConfig>>(api(modulo))
 }
 
 export async function upsertTurnoCatalogo(
@@ -56,25 +41,14 @@ export async function upsertTurnoCatalogo(
   codigo: string,
   config: TurnoCatalogoConfig
 ): Promise<void> {
-  const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(
-      { modulo, codigo, ...config, updated_at: new Date().toISOString() },
-      { onConflict: "modulo,codigo" }
-    )
-  if (error) throw new Error(error.message)
+  await apiJson(api(modulo), { method: "PUT", body: { codigo, config } })
 }
 
 export async function deleteTurnoCatalogo(modulo: CatalogoModulo, codigo: string): Promise<void> {
-  const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase.from(TABLE).delete().eq("modulo", modulo).eq("codigo", codigo)
-  if (error) throw new Error(error.message)
+  await apiJson(`${api(modulo)}?codigo=${encodeURIComponent(codigo)}`, { method: "DELETE" })
 }
 
 /** Purga todos los turnos personalizados de un módulo (usado por "Restaurar valores por defecto"). */
 export async function deleteAllTurnosCatalogo(modulo: CatalogoModulo): Promise<void> {
-  const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase.from(TABLE).delete().eq("modulo", modulo)
-  if (error) throw new Error(error.message)
+  await apiJson(api(modulo), { method: "DELETE" })
 }
