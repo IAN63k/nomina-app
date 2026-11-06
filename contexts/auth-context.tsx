@@ -49,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     setUser(null)
     localStorage.removeItem(SESSION_KEY)
+    // Borra la cookie de sesión firmada; si falla la red, igual cerramos en la UI.
+    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
   }, [])
 
   const value: AuthContextType = {

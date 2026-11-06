@@ -45,3 +45,6 @@ next-env.d.ts
 
 # vscode — configuración local del editor
 .vscode/
+
+# Datos reales de incapacidades para pruebas (Ley 1581: no se suben al repo)
+test-fixtures/private/
