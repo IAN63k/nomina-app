@@ -52,4 +52,12 @@ describe("permisos de incapacidades", () => {
     expect(puede("consulta", "exportar")).toBe(true)
     expect(puede("consulta", "registrar_gestion")).toBe(false)
   })
+
+  it("turnos: analista edita pero no vacía; consulta solo ve", () => {
+    expect(puede("admin", "vaciar_turnos")).toBe(true)
+    expect(puede("analista", "editar_turnos")).toBe(true)
+    expect(puede("analista", "vaciar_turnos")).toBe(false)
+    expect(puede("consulta", "ver_turnos")).toBe(true)
+    expect(puede("consulta", "editar_turnos")).toBe(false)
+  })
 })

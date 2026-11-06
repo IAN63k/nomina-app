@@ -1,14 +1,14 @@
 /**
  * Preferencias de usuario por módulo, persistidas en Supabase
- * (tabla `user_preferences`: usuario, clave, valor jsonb).
- *
- * El usuario se toma de la sesión (`auth_user` en localStorage, ver
- * AuthContext). Sin sesión —o si Supabase falla— se usa localStorage como
+ * (tabla `user_preferences`: usuario, clave, valor jsonb) vía
+ * app/api/preferencias, que usa el usuario de la SESIÓN FIRMADA (nadie puede
+ * leer ni cambiar las de otro).
+ * Sin sesión —o si Supabase falla— se usa localStorage como
  * respaldo, y lo guardado allí se migra a la tabla en la primera lectura
  * con sesión activa.
  */
 
-import { getSupabaseBrowserClient } from "@/src/lib/supabase-browser"
+import { apiJson } from "@/src/lib/apiCliente"
 import type { ShiftModule } from "@/src/constants/shiftColors"
 
 export type RecargosDetailPrefs = {
@@ -19,8 +19,6 @@ export type RecargosDetailPrefs = {
   /** Filas por página. */
   pageSize: number
 }
-
-const TABLE = "user_preferences"
 
 const detailClave = (module: ShiftModule) => `recargos-detail:${module}`
 const detailKey = (module: ShiftModule) => `nomina:prefs:recargos-detail:${module}`
@@ -66,19 +64,9 @@ function saveToLocalStorage(module: ShiftModule, prefs: RecargosDetailPrefs): vo
   }
 }
 
-async function upsertPrefs(
-  usuario: string,
-  clave: string,
-  valor: Partial<RecargosDetailPrefs>
-): Promise<void> {
-  const supabase = getSupabaseBrowserClient()
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(
-      { usuario, clave, valor, updated_at: new Date().toISOString() },
-      { onConflict: "usuario,clave" }
-    )
-  if (error) throw error
+// Las preferencias no deben cerrar la sesión si fallan: caen a localStorage.
+async function upsertPrefs(clave: string, valor: Partial<RecargosDetailPrefs>): Promise<void> {
+  await apiJson("/api/preferencias", { method: "PUT", body: { clave, valor }, avisarSesion: false })
 }
 
 export async function loadRecargosDetailPrefs(
@@ -90,14 +78,10 @@ export async function loadRecargosDetailPrefs(
   if (!usuario) return loadFromLocalStorage(module)
 
   try {
-    const supabase = getSupabaseBrowserClient()
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select("valor")
-      .eq("usuario", usuario)
-      .eq("clave", detailClave(module))
-      .maybeSingle()
-    if (error) throw error
+    const data = await apiJson<{ valor: unknown }>(
+      `/api/preferencias?clave=${encodeURIComponent(detailClave(module))}`,
+      { avisarSesion: false },
+    )
 
     if (data?.valor && typeof data.valor === "object") {
       return data.valor as Partial<RecargosDetailPrefs>
@@ -106,7 +90,7 @@ export async function loadRecargosDetailPrefs(
     // Sin fila en la tabla: migrar lo que hubiera en localStorage.
     const local = loadFromLocalStorage(module)
     if (local) {
-      upsertPrefs(usuario, detailClave(module), local).catch(() => {})
+      upsertPrefs(detailClave(module), local).catch(() => {})
     }
     return local
   } catch {
@@ -127,7 +111,7 @@ export async function saveRecargosDetailPrefs(
   }
 
   try {
-    await upsertPrefs(usuario, detailClave(module), prefs)
+    await upsertPrefs(detailClave(module), prefs)
   } catch {
     // Supabase no disponible: conservar al menos en este navegador.
     saveToLocalStorage(module, prefs)
