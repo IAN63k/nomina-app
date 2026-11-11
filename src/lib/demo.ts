@@ -40,7 +40,7 @@ export function loginDemo(usuario: string, password: string): SessionUser | null
   if (!esUsuarioDemo(usuario) || !igualSeguro(password, process.env.DEMO_PASSWORD!)) return null
   return {
     id: USUARIO_DEMO_ID,
-    nombre: "Usuario de demostración",
+    nombre: "Usuario de Nomina",
     usuario: process.env.DEMO_USUARIO!.trim(),
     rol: "admin",
     demo: true,
