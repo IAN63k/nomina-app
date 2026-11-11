@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { timingSafeEqual } from "node:crypto"
 import { requireSession } from "@/src/lib/requireSession"
-import { getSupabaseServerClient } from "@/src/lib/supabase-server"
+import { BD_REAL, getSupabaseServerClient, type DestinoBd } from "@/src/lib/supabase-server"
 import { evaluarYRegistrar } from "@/src/lib/incapacidadesDb"
 
 /**
@@ -13,7 +13,8 @@ import { evaluarYRegistrar } from "@/src/lib/incapacidadesDb"
  * Vercel envía `Authorization: Bearer $CRON_SECRET` si la variable existe.
  *
  * La puede llamar un usuario con sesión (botón "Evaluar ahora") o la tarea
- * diaria (Vercel Cron) con `Authorization: Bearer $CRON_SECRET`.
+ * diaria (Vercel Cron) con `Authorization: Bearer $CRON_SECRET`. El cron
+ * evalúa solo la base real; la demo se evalúa con su propio botón o al cargar.
  */
 function esCron(req: NextRequest): boolean {
   const secreto = process.env.CRON_SECRET
@@ -26,14 +27,16 @@ function esCron(req: NextRequest): boolean {
 
 async function manejar(req: NextRequest) {
   let usuario: string | null = null
+  let destino: DestinoBd = BD_REAL
   const cron = esCron(req)
   if (!cron) {
     const auth = await requireSession(req, "atender_alerta")
     if (!auth.ok) return auth.response
     usuario = auth.user.usuario
+    destino = auth.user
   }
   try {
-    return NextResponse.json(await evaluarYRegistrar(getSupabaseServerClient(), cron ? "cron" : "manual", usuario))
+    return NextResponse.json(await evaluarYRegistrar(getSupabaseServerClient(destino), cron ? "cron" : "manual", usuario))
   } catch (e) {
     console.error("Evaluar alertas:", e instanceof Error ? e.message : e)
     return NextResponse.json({ error: "No se pudieron evaluar las alertas." }, { status: 500 })

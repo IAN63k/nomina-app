@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Cuerpo inválido" }, { status: 400 })
   }
-  const db = getSupabaseServerClient()
+  const db = getSupabaseServerClient(auth.user)
   let fondos: string[]
   try {
     fondos = await listaFondos(db)

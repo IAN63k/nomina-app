@@ -3,6 +3,8 @@ export interface User {
   nombre: string
   usuario: string
   rol: string
+  /** Sesión de demostración (datos ficticios, BD demo). */
+  demo?: boolean
 }
 
 export interface LoginCredentials {
