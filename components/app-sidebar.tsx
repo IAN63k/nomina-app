@@ -5,8 +5,6 @@ import {
   Home,
   Users,
   FileText,
-  BarChart3,
-  Settings,
   Briefcase,
 } from "lucide-react"
 
@@ -23,7 +21,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { cn } from "@/lib/utils"
 import { useResumenAlertas } from "@/components/incapacidades/alertas-pendientes"
 
-// This is sample data.
+// Solo módulos con página real. url "#" solo para encabezados de grupo (con items).
 const data = {
   navMain: [
     {
@@ -53,44 +51,6 @@ const data = {
         {
           title: "Incapacidades",
           url: "/incapacidades",
-        },
-        {
-          title: "Procesar Nómina",
-          url: "#",
-        },
-        {
-          title: "Historial",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Reportes",
-      url: "#",
-      icon: BarChart3,
-      items: [
-        {
-          title: "Reportes Mensuales",
-          url: "#",
-        },
-        {
-          title: "Reportes Anuales",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Configuración",
-      url: "#",
-      icon: Settings,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Usuarios",
-          url: "#",
         },
       ],
     },

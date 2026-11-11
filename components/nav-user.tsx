@@ -2,10 +2,8 @@
 
 import { useRouter } from "next/navigation"
 import {
-  BadgeCheck,
   ChevronsUpDown,
   LogOut,
-  User,
 } from "lucide-react"
 
 import {
@@ -16,7 +14,6 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -94,17 +91,6 @@ export function NavUser({
                 </div>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <User />
-                Mi Cuenta
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <BadgeCheck />
-                Perfil
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut />

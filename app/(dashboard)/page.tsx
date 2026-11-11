@@ -3,8 +3,9 @@
 import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Users, Clock, Palmtree, ArrowRight, ShieldCheck } from "lucide-react"
+import { Users, Clock, Palmtree, HeartPulse, ArrowRight, ShieldCheck, BellRing } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
+import { useResumenAlertas } from "@/components/incapacidades/alertas-pendientes"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ const MODULES = [
     href:        "/empleados",
     icon:        Users,
     label:       "Empleados",
-    description: "Carga y gestiona el listado de colaboradores y sus cédulas.",
+    description: "Maestro de colaboradores: cédula, cargo, sede y fondo de pensiones, compartido por todos los módulos.",
     accent:      "#14532d",
     bg:          "#f0fdf4",
     border:      "#bbf7d0",
@@ -38,7 +39,7 @@ const MODULES = [
     href:        "/recargos",
     icon:        Clock,
     label:       "Recargos",
-    description: "Turnos médicos, recargos nocturnos y exportación de TXT.",
+    description: "Turnos de médicos y auxiliares: recargos nocturnos, dominicales, festivos y horas extra, con exportación a TXT.",
     accent:      "#1e3a5f",
     bg:          "#eff6ff",
     border:      "#bfdbfe",
@@ -46,11 +47,20 @@ const MODULES = [
   {
     href:        "/vacaciones",
     icon:        Palmtree,
-    label:       "Vacaciones",
-    description: "Registro y seguimiento de períodos de vacaciones.",
+    label:       "Cartas de vacaciones",
+    description: "Genera las cartas desde la programación en Excel, con períodos acumulados, en Word o PDF.",
     accent:      "#713f12",
     bg:          "#fffbeb",
     border:      "#fed7aa",
+  },
+  {
+    href:        "/incapacidades",
+    icon:        HeartPulse,
+    label:       "Incapacidades",
+    description: "Seguimiento del cobro a EPS, ARL y fondos de pensiones, con alertas de 90 a 180 días.",
+    accent:      "#881337",
+    bg:          "#fff1f2",
+    border:      "#fecdd3",
   },
 ]
 
@@ -59,6 +69,7 @@ const MODULES = [
 export default function DashboardPage() {
   const { user, isAuthenticated, isLoading } = useAuth()
   const router = useRouter()
+  const alertas = useResumenAlertas(isAuthenticated)
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) router.push("/login")
@@ -139,7 +150,7 @@ export default function DashboardPage() {
           <p className="mb-4 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
             Módulos disponibles
           </p>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {MODULES.map((mod) => (
               <Link
                 key={mod.href}
@@ -165,6 +176,14 @@ export default function DashboardPage() {
                 <p className="text-[13px] leading-relaxed text-foreground/60">
                   {mod.description}
                 </p>
+
+                {mod.href === "/incapacidades" && (alertas?.pendientes ?? 0) > 0 && (
+                  <p className="mt-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium"
+                    style={{ background: mod.accent + "14", color: mod.accent }}>
+                    <BellRing className="h-3 w-3" />
+                    {alertas!.pendientes} {alertas!.pendientes === 1 ? "alerta pendiente" : "alertas pendientes"}
+                  </p>
+                )}
 
                 {/* arrow */}
                 <div className="mt-4 flex items-center gap-1" style={{ color: mod.accent }}>
