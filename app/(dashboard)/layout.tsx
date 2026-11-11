@@ -23,7 +23,7 @@ import { SettingsSidebarProvider } from "@/contexts/settings-sidebar-context";
 import { EmpleadosProvider } from "@/contexts/empleados-context";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { LogIn } from "lucide-react";
+import { FlaskConical, LogIn } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 export default function DashboardLayout({
@@ -33,7 +33,7 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isAuthenticated, isLoading, sesionVencida, logout } = useAuth();
+  const { user, isAuthenticated, isLoading, sesionVencida, logout } = useAuth();
 
   // Sin sesión (o sesión firmada inválida al abrir) → al login.
   useEffect(() => {
@@ -84,6 +84,14 @@ export default function DashboardLayout({
                 <SettingsSidebar />
               </div>
             </header>
+            {user?.demo && (
+              <div role="status" className="mx-4 mb-2 flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm text-sky-900 md:mx-6 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                <FlaskConical className="h-4 w-4 shrink-0" />
+                <span>
+                  <strong>Modo demostración:</strong> Los cambios no afectan la información real ni consolidados de excel.
+                </span>
+              </div>
+            )}
             {sesionVencida && (
               <div role="alert" className="mx-4 mb-2 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900 md:mx-6 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
                 <span>

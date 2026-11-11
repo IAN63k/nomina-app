@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireSession(req, "ver_colaboradores")
   if (!auth.ok) return auth.response
   try {
-    const db = getSupabaseServerClient()
+    const db = getSupabaseServerClient(auth.user)
     const [colaboradores, fondos] = await Promise.all([listarColaboradores(db), listaFondos(db)])
     return NextResponse.json({ colaboradores, fondos })
   } catch (e) {

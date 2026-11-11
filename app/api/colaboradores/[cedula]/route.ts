@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ cedula: s
     return NextResponse.json({ error: "Cuerpo inválido" }, { status: 400 })
   }
 
-  const db = getSupabaseServerClient()
+  const db = getSupabaseServerClient(auth.user)
   try {
     const v = validarEdicion(body, await listaFondos(db))
     if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
