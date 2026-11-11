@@ -13,7 +13,7 @@ Sirve para mostrar la app sin exponer datos personales (Ley 1581).
   `demo: true` usa `DEMO_SUPABASE_URL` / `DEMO_SUPABASE_SERVICE_ROLE_KEY`. Si faltan,
   o si apuntan al proyecto real, lanza un error en vez de caer en la base real.
   Solo el login y el cron usan `BD_REAL` explícitamente (lo vigila `src/lib/demo.test.ts`).
-- **UI**: franja "Modo demostración" en el layout.
+- **UI**: idéntica a la real; no se muestra ningún aviso de demostración.
 - **Cron**: la tarea diaria de alertas solo evalúa la base real.
 - Un usuario real con el mismo nombre que `DEMO_USUARIO` no podría entrar: elegir
   un nombre que no exista (p. ej. `demo`).
