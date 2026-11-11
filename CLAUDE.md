@@ -116,6 +116,10 @@ SESSION_SECRET                   # Firma de la cookie de sesión (≥ 32 caracte
 CRON_SECRET                      # Vercel Cron → evaluación diaria de alertas
 ```
 
+### Modo demostración
+
+`DEMO_USUARIO`/`DEMO_PASSWORD` + `DEMO_SUPABASE_URL`/`DEMO_SUPABASE_SERVICE_ROLE_KEY` habilitan un usuario admin cuya sesión firmada lleva `demo: true`; **todas** sus rutas usan el proyecto Supabase demo (solo datos ficticios). `getSupabaseServerClient(destino)` exige el usuario de la sesión (o `BD_REAL` explícito, solo login y cron) y falla si la demo apunta al proyecto real. Datos: `npm run demo:sembrar -- --aplicar`. Ver `docs/demo/README.md`.
+
 ### DB Table: `turnos_medicos`
 
 Columns: `medico`, `fecha`, `fecha_inicio`, `turno_codigo`, `entrada`, `salida`, `horas`, `horasrecargo`, `concepto`, `dia` (D=Sunday, H=Weekday, S=Saturday). Unique key: `(medico, fecha_inicio, concepto)` — multiple conceptos per day coexist as separate rows; `fecha` is the physical date, `fecha_inicio` the shift's start day (differ only on a night's post-midnight half).

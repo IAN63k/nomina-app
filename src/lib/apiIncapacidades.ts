@@ -44,7 +44,7 @@ export function ruta<P = Record<string, string>>(
     if (!auth.ok) return auth.response
     try {
       const params = segmento?.params ? await segmento.params : ({} as P)
-      return await manejador({ req, user: auth.user, db: getSupabaseServerClient() }, params)
+      return await manejador({ req, user: auth.user, db: getSupabaseServerClient(auth.user) }, params)
     } catch (e) {
       if (e instanceof ErrorHttp) return fallo(e.status, e.message, e.extra)
       console.error(`${req.method} ${req.nextUrl.pathname}:`, e instanceof Error ? e.message : e)

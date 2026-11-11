@@ -1,6 +1,6 @@
 {
   "name": "nomina-app",
-  "version": "1.19.1",
+  "version": "1.20.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "migrar:incapacidades": "TZ=America/Bogota node node_modules/vite-node/vite-node.mjs --config vitest.config.ts scripts/migrar-incapacidades.ts --"
+    "migrar:incapacidades": "TZ=America/Bogota node node_modules/vite-node/vite-node.mjs --config vitest.config.ts scripts/migrar-incapacidades.ts --",
+    "demo:sembrar": "TZ=America/Bogota node node_modules/vite-node/vite-node.mjs --config vitest.config.ts scripts/sembrar-demo.ts --"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",

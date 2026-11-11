@@ -17,6 +17,8 @@ export interface SessionUser {
   nombre: string
   usuario: string
   rol: string
+  /** Sesión de demostración: todas las rutas usan la BD demo (datos ficticios). */
+  demo?: boolean
 }
 
 function getSecret(): Uint8Array {
@@ -28,7 +30,9 @@ function getSecret(): Uint8Array {
 }
 
 export async function createSessionToken(user: SessionUser): Promise<string> {
-  return new SignJWT({ nombre: user.nombre, usuario: user.usuario, rol: user.rol })
+  const claims: Record<string, unknown> = { nombre: user.nombre, usuario: user.usuario, rol: user.rol }
+  if (user.demo) claims.demo = true
+  return new SignJWT(claims)
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(user.id)
     .setIssuedAt()
@@ -42,12 +46,14 @@ export async function verifySessionToken(token: string | undefined): Promise<Ses
   try {
     const { payload } = await jwtVerify(token, getSecret(), { algorithms: ["HS256"] })
     if (!payload.sub || typeof payload.usuario !== "string") return null
-    return {
+    const user: SessionUser = {
       id: payload.sub,
       nombre: String(payload.nombre ?? ""),
       usuario: payload.usuario,
       rol: String(payload.rol ?? ""),
     }
+    if (payload.demo === true) user.demo = true
+    return user
   } catch {
     return null
   }
